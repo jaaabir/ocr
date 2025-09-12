@@ -9,7 +9,7 @@ synthdog/
 trainer_output/
 venv/
 wandb/
-
+checkpoint-*/
 
 # files
 
