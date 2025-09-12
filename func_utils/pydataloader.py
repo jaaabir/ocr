@@ -1,0 +1,203 @@
+import os
+import cv2
+import json
+import torch 
+import numpy as np 
+from torch.utils.data import Dataset, DataLoader
+from .supabase_utils import init_supabase, load_buffer_to_np, retreive_data_from_table
+
+
+
+SUPABASE = init_supabase()
+get_basename = lambda f: os.path.basename(f)
+remove_ext = lambda f: os.path.splitext(get_basename(f))[0] if isinstance(f, str) else f
+str_to_json = lambda f: json.loads(f) if isinstance(f, str) else f
+
+def get_val_from_json(data, val_name, root_key_name = None):
+    val = [c.get(val_name, []) for c in (data[root_key_name] if root_key_name else data)]
+    return val
+
+class TableDataset(Dataset):
+    def __init__(self, metadata, transform=False, img_size=224, n_channels=2, channel_first=True, to_torch=True):
+        """
+        Args:
+            metadata (list[dict]): a single row contains [id, filename, document structure metadata, text metadata]
+            transform (callable, optional): Transformations for image preprocessing
+            img_size (int): resize target for images if no transform given
+        """
+        self.data = metadata
+        self.transform = transform
+        self.img_size = img_size
+        self.n_channels = n_channels
+        self.channel_first = channel_first
+        self.to_torch = to_torch
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        # --- read image ---
+        img_path = self.data[idx]['name'] + '.jpg'
+        struct = self.data[idx]['struct']
+        words = self.data[idx]['words']
+        img = load_buffer_to_np(SUPABASE, img_path)
+
+        if self.n_channels == 2 and len(img.shape) == 3:
+            # Convert RGB to grayscale if image has 3 channels
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+
+        img_h, img_w = img.shape[:2]
+
+
+        # resize if no external transform is supplied
+        if self.transform:
+            img, bboxes = self.transform(img, struct, words)
+        else:
+            sbboxes = get_val_from_json(struct, "bbox", 'objects')
+            wbboxes = get_val_from_json(words, "bbox")
+            bboxes = sbboxes + wbboxes
+            img = img.astype(np.float32) / 255.0
+        
+        if self.img_size:
+            img = cv2.resize(img, self.img_size)
+
+        if self.to_torch:
+            img = torch.from_numpy(img)
+
+        if self.n_channels == 3 and self.channel_first:
+            img = img.permute(2, 0, 1)  # HWC -> CHW
+
+        sample = {
+            "image": img,
+            "struct": struct,
+            "words": words,
+            'texts' : get_val_from_json(words, 'text'),
+            'bboxes' : bboxes
+        }
+
+        return sample
+    
+
+class ImageDataset(Dataset):
+    def __init__(self, image_path, transform=False, n_channels=2, channel_first=True, to_torch=True, img_size = (864, 864)):
+        self.data = image_path
+        self.transform = transform
+        self.n_channels = n_channels
+        self.channel_first = channel_first
+        self.to_torch = to_torch
+        self.H, self.W = img_size
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        image_path = self.data[idx]
+        image = cv2.imread(image_path)
+
+        if self.n_channels == 2 and len(image.shape) == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        if self.transform:
+            image = self.transform(image, None, None, self.H, self.W)
+
+        if self.to_torch:
+            image = torch.from_numpy(image)
+        
+            if self.channel_first:
+                image = image.permute(-1, 0, 1)
+
+        return image
+    
+def read_json(fname, encoding='utf-8'):
+    data = []
+
+    # Open the JSONL file and read each line
+    with open(fname, 'r', encoding=encoding) as f:
+        for line in f:
+            try:
+                # Parse each line as a JSON object
+                data.append(json.loads(line))
+            except json.JSONDecodeError as e:
+                print(f"Error decoding JSON on line: {line}")
+                print(f"Error: {e}")
+    return data
+
+
+get_language = lambda x : x.split('\\')[2].split('_')[-1]
+
+
+class SynthDogDataset(Dataset):
+    def __init__(self, image_path, output_jsons_path, image_feature_extractor, text_tokenizer = None, max_token_size = 512, n_channels = 3, return_processed_outputs = True, required_input_ids=False, sample_size = -1):
+        self.data = image_path
+        self.metadata = [read_json(output_json_path) for output_json_path in output_jsons_path]
+        self.image_feature_extractor = image_feature_extractor
+        self.text_tokenizer = text_tokenizer
+        self.max_token_size = max_token_size
+        self.n_channels = n_channels
+        self.return_processed_outputs = return_processed_outputs
+        self.required_input_ids = required_input_ids
+
+        if sample_size > 0:
+            self.data = np.random.choice(self.data, sample_size, replace=False).tolist()
+        
+        self.json_metadata = {}
+
+        for i in range(len(self.metadata)):
+            language = get_language(output_jsons_path[i])
+            for jdata in self.metadata[i]:
+                fname = jdata['file_name'] + '_' + language
+                gt = jdata['ground_truth']
+                self.json_metadata[fname] = gt
+
+        if len(self.data) != len(self.json_metadata): print(f"Length of _.images: {len(self.data)} | Length of _.json_metadata: {len(self.json_metadata)}")
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        image_path = self.data[idx]
+        language = get_language(image_path)
+        fname = get_basename(image_path)
+        image = cv2.imread(image_path)
+        kname = fname + '_' + language
+        metadata = self.json_metadata.get(kname)
+        # print(kname)
+        target_text = json.loads(metadata).get('gt_parse').get('text_sequence')
+
+        if self.n_channels == 2 and len(image.shape) == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        if self.text_tokenizer:
+            image_features = self.image_feature_extractor(image, return_tensors="pt").pixel_values.squeeze(0)
+            tokenizer_op = self.text_tokenizer(target_text, truncation=False, padding="do_not_pad", return_tensors="pt")
+            attention_mask = tokenizer_op['attention_mask'].squeeze(0)
+            output_tokens = tokenizer_op['input_ids'].squeeze(0)
+        else:
+            proc_outputs = self.image_feature_extractor(
+                images=image,
+                text = target_text,
+                truncation=False,
+                # padding="max_length",
+                # max_length=self.max_token_size,
+                return_tensors="pt",
+            )
+            image_features = proc_outputs["pixel_values"].squeeze(0)
+            output_tokens = proc_outputs["input_ids"].squeeze(0)
+            attention_mask = proc_outputs["attention_mask"].squeeze(0)
+
+        data =  {
+        'pixel_values'   : image_features if self.return_processed_outputs else image,
+        'labels'         : output_tokens if self.return_processed_outputs else target_text,
+        'image'          : image,
+        'text'           : target_text,
+        'image_path'     : image_path,
+        'metadata_fname' : fname
+    }
+        if self.return_processed_outputs:
+            data['attention_mask'] = attention_mask
+        return data
+        

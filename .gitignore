@@ -1,0 +1,17 @@
+# folders
+__pycache__/
+detectron2/
+legal_docs/
+models/
+PubTab/
+SciTSR/
+synthdog/
+trainer_output/
+venv/
+wandb/
+
+
+# files
+
+.env
+*.png
