@@ -138,9 +138,11 @@ class SynthDogDataset(Dataset):
         self.n_channels = n_channels
         self.return_processed_outputs = return_processed_outputs
         self.required_input_ids = required_input_ids
+        self.total_languages = len(output_jsons_path)
 
         if sample_size > 0:
-            self.data = np.random.choice(self.data, sample_size, replace=False).tolist()
+            # self.data = np.random.choice(self.data, sample_size, replace=False).tolist()
+            self.data = self.sample_data_equally(sample_size, self.data)
         
         self.json_metadata = {}
 
@@ -155,6 +157,28 @@ class SynthDogDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
+    
+    def sample_data_equally(self, total_n_samples, paths):
+        image_paths = np.random.shuffle(paths)
+        n_sample_per_lang = total_n_samples // self.total_languages
+        sampled_paths = []
+        sampled_lang_counter = {}
+        i = 0
+
+        while len(sampled_paths) < total_n_samples:
+            if i >= len(paths):
+                break
+            curr_lang = get_language(paths[i])
+            if curr_lang not in sampled_lang_counter:
+                sampled_lang_counter[curr_lang] = 0
+            
+            if sampled_lang_counter[curr_lang] < n_sample_per_lang:
+                sampled_paths.append(paths[i])
+                sampled_lang_counter[curr_lang] += 1
+            i += 1
+        print(f"Sampled lang counter: {sampled_lang_counter}")
+        return sampled_paths
+
 
     def __getitem__(self, idx):
         image_path = self.data[idx]
