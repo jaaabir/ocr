@@ -46,7 +46,7 @@ peak_mem = torch.cuda.max_memory_allocated()
 print(f"The model as is is holding: {peak_mem / 1024**3:.2f} of GPU RAM")
 
 max_token_size = 512
-sample_size = 10
+sample_size = int(input('sample size: '))
 train_synthdataset = SynthDogDataset(output_jsons_path=train_json_metadata, image_feature_extractor=processor, 
                                      text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, read_images_from_supabase=True, split='train')
 val_synthdataset = SynthDogDataset(output_jsons_path=val_json_metadata, image_feature_extractor=processor, 
@@ -380,7 +380,7 @@ target_modules = [
 ]
 modules_to_save = None
 
-num_epochs = 500
+num_epochs = int(input('Number of epochs : '))
 training_args = Seq2SeqTrainingArguments(
         output_dir="./dit_bart_lora_v6",
         per_device_train_batch_size=4,
@@ -428,7 +428,7 @@ print_trainable_prams(ovmodel)
 
 
 early_stopping_callback = EarlyStoppingCallback(
-    early_stopping_patience=15, early_stopping_threshold=0.001
+    early_stopping_patience=15, early_stopping_threshold=0.0001
 )
 trainer, model, image_processor, text_tokenizer = setup_dit_bart_training(
         train_synthdataset, val_synthdataset, training_args=training_args, loaded_model = ovmodel, run_name = run_name, 
