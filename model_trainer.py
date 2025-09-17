@@ -55,8 +55,9 @@ test_synthdataset = SynthDogDataset(output_jsons_path=test_json_metadata, image_
                                     text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, read_images_from_supabase=True, split='test') 
 
 model_config_version = 'v6'
-run_name = f"dit_bart_{sample_size}_samples_{model_config_version}" 
-run_name = 'testing v6'
+run_name = input('Run name: ')
+if run_name == '':
+    run_name = f"dit_bart_{sample_size}_samples_{model_config_version}" 
 wandb.init(project="ocr model", name=run_name)
 
 def improved_collate_fn(batch, text_tokenizer, max_length=max_token_size):
