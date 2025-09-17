@@ -6,8 +6,7 @@ import dotenv
 import numpy as np 
 from torch.utils.data import Dataset, DataLoader
 from .supabase_utils import init_supabase, load_buffer_to_np, retreive_data_from_table, list_files_in_bucket
-
-
+from pathlib import Path
 
 
 get_basename = lambda f: os.path.basename(f)
@@ -128,7 +127,7 @@ def read_json(fname, encoding='utf-8'):
     return data
 
 
-get_language = lambda x, from_supabase = False : x.split('/')[0].split('_')[-1] if from_supabase else x.split('\\')[2].split('_')[-1]
+get_language = lambda x, from_supabase = False : Path(x).parts[0 if from_supabase else 2].split('_')[-1]
 get_split = lambda x : x.split('\\')[3]
 local_fpath_to_supbase_fpath = lambda path : f"SynthDog_{get_language(path)}/{get_split(path)}/{get_basename(path)}" 
 
@@ -163,7 +162,7 @@ class SynthDogDataset(Dataset):
         
         self.json_metadata = {}
 
-        for i in range(len(self.metadata)):
+        for i in range(len(self.metadata)): 
             language = get_language(output_jsons_path[i])
             for jdata in self.metadata[i]:
                 fname = jdata['file_name'] + '_' + language
