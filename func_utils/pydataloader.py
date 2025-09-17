@@ -2,13 +2,14 @@ import os
 import cv2
 import json
 import torch 
+import dotenv
 import numpy as np 
 from torch.utils.data import Dataset, DataLoader
-from .supabase_utils import init_supabase, load_buffer_to_np, retreive_data_from_table
+from .supabase_utils import init_supabase, load_buffer_to_np, retreive_data_from_table, list_files_in_bucket
 
 
 
-SUPABASE = init_supabase()
+
 get_basename = lambda f: os.path.basename(f)
 remove_ext = lambda f: os.path.splitext(get_basename(f))[0] if isinstance(f, str) else f
 str_to_json = lambda f: json.loads(f) if isinstance(f, str) else f
@@ -18,13 +19,15 @@ def get_val_from_json(data, val_name, root_key_name = None):
     return val
 
 class TableDataset(Dataset):
-    def __init__(self, metadata, transform=False, img_size=224, n_channels=2, channel_first=True, to_torch=True):
+    def __init__(self, metadata, transform=False, img_size=224, n_channels=2, channel_first=True, to_torch=True, env_path = '.'):
         """
         Args:
             metadata (list[dict]): a single row contains [id, filename, document structure metadata, text metadata]
             transform (callable, optional): Transformations for image preprocessing
             img_size (int): resize target for images if no transform given
         """
+        dotenv.load_dotenv(env_path)
+        self.SUPABASE = init_supabase()
         self.data = metadata
         self.transform = transform
         self.img_size = img_size
@@ -40,7 +43,7 @@ class TableDataset(Dataset):
         img_path = self.data[idx]['name'] + '.jpg'
         struct = self.data[idx]['struct']
         words = self.data[idx]['words']
-        img = load_buffer_to_np(SUPABASE, img_path)
+        img = load_buffer_to_np(self.SUPABASE, img_path)
 
         if self.n_channels == 2 and len(img.shape) == 3:
             # Convert RGB to grayscale if image has 3 channels
@@ -125,12 +128,24 @@ def read_json(fname, encoding='utf-8'):
     return data
 
 
-get_language = lambda x : x.split('\\')[2].split('_')[-1]
-
+get_language = lambda x, from_supabase = False : x.split('/')[0].split('_')[-1] if from_supabase else x.split('\\')[2].split('_')[-1]
+get_split = lambda x : x.split('\\')[3]
+local_fpath_to_supbase_fpath = lambda path : f"SynthDog_{get_language(path)}/{get_split(path)}/{get_basename(path)}" 
 
 class SynthDogDataset(Dataset):
-    def __init__(self, image_path, output_jsons_path, image_feature_extractor, text_tokenizer = None, max_token_size = 512, n_channels = 3, return_processed_outputs = True, required_input_ids=False, sample_size = -1):
-        self.data = image_path
+    def __init__(self, image_path = None, output_jsons_path = None, image_feature_extractor = None, text_tokenizer = None, max_token_size = 512, n_channels = 3, 
+                 return_processed_outputs = True, required_input_ids=False, sample_size = -1, read_images_from_supabase = False, split='train', env_path=os.path.join(os.getcwd(), '.env')):
+        dotenv.load_dotenv(env_path)
+        self.supabase = init_supabase(os.environ['COMU_SUPABASE_URL'], os.environ['COMU_SUPABASE_API_KEY'])
+        self.bucket_name = os.environ['COMU_BUCKET_NAME']
+        # self.data = image_path if not read_images_from_supabase else list_files_in_bucket(self.supabase, self.bucket_name, path)
+        if read_images_from_supabase:
+            en = list_files_in_bucket(self.supabase, self.bucket_name, f'SynthDog_en/{split}')
+            pt = list_files_in_bucket(self.supabase, self.bucket_name, f'SynthDog_pt/{split}')
+            self.data = en + pt
+        else:
+            self.data = image_path
+
         self.metadata = [read_json(output_json_path) for output_json_path in output_jsons_path]
         self.image_feature_extractor = image_feature_extractor
         self.text_tokenizer = text_tokenizer
@@ -139,9 +154,11 @@ class SynthDogDataset(Dataset):
         self.return_processed_outputs = return_processed_outputs
         self.required_input_ids = required_input_ids
         self.total_languages = len(output_jsons_path)
+        self.read_images_from_supabase = read_images_from_supabase
+
 
         if sample_size > 0:
-            # self.data = np.random.choice(self.data, sample_size, replace=False).tolist()
+            print(self.data[:2])
             self.data = self.sample_data_equally(sample_size, self.data)
         
         self.json_metadata = {}
@@ -168,7 +185,7 @@ class SynthDogDataset(Dataset):
         while len(sampled_paths) < total_n_samples:
             if i >= len(paths):
                 break
-            curr_lang = get_language(paths[i])
+            curr_lang = get_language(paths[i], self.read_images_from_supabase)
             if curr_lang not in sampled_lang_counter:
                 sampled_lang_counter[curr_lang] = 0
             
@@ -181,10 +198,10 @@ class SynthDogDataset(Dataset):
 
 
     def __getitem__(self, idx):
-        image_path = self.data[idx]
-        language = get_language(image_path)
+        image_path = self.data[idx] 
+        language = get_language(image_path, self.read_images_from_supabase)
         fname = get_basename(image_path)
-        image = cv2.imread(image_path)
+        image = cv2.imread(image_path) if not self.read_images_from_supabase else load_buffer_to_np(self.supabase, image_path, self.bucket_name)
         kname = fname + '_' + language
         metadata = self.json_metadata.get(kname)
         # print(kname)

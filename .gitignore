@@ -10,8 +10,8 @@ trainer_output/
 venv/
 wandb/
 checkpoint-*/
+*_final_model/
 
 # files
-
 .env
 *.png
