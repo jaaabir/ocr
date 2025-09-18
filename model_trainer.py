@@ -148,26 +148,19 @@ from collections import Counter
 
 def pred_intersect_labels(preds, labels):
     scores = []
-    
     for pred, label in zip(preds, labels):
-        pred_count = Counter(pred.split())
-        label_count = Counter(label.split())
-        
-        # Multiset intersection (min of counts for each word)
-        common = pred_count & label_count
-        
-        overlap = sum(common.values())
-        total = sum(pred_count.values())
-        
-        score = overlap / total if total > 0 else 0
-        scores.append(score)
-    
-    # Average over all samples
+        pred_words = pred.split()
+        label_words = label.split()
+        if not pred_words:
+            scores.append(0.0)
+            continue
+        overlap = sum((word in label_words) for word in pred_words)
+        scores.append(overlap / len(pred_words))
     return sum(scores) / len(scores) if scores else 0
 
+bleu = evaluate.load("bleu")
 def compute_bleu(decoded_preds, decoded_labels):
     try:
-        bleu = evaluate.load("bleu")
         bleu_score = bleu.compute(predictions=decoded_preds, references=[[label] for label in decoded_labels])
         bleu_value = bleu_score["bleu"]
     except:
