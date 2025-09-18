@@ -385,15 +385,20 @@ modules_to_save = None
 
 num_epochs = int(input('Number of epochs : '))
 eval_steps = 100
-if num_epochs > 25000:
+grad_accumulation = 2
+steps_per_epoch = len(train_synthdataset)/(batch_size*1*grad_accumulation)
+total_training_steps = int(steps_per_epoch * num_epochs)
+if total_training_steps > 25000:
     eval_steps = 1000
+save_steps = eval_steps
 
-save_steps = eval_steps // 2
+print(f'Total training steps: {total_training_steps}')
+print(f'Eval steps & Save steps: {eval_steps}')
 training_args = Seq2SeqTrainingArguments(
         output_dir="./dit_bart_lora_v6",
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        gradient_accumulation_steps=2,
+        gradient_accumulation_steps=grad_accumulation,
         learning_rate=1e-4,  
         lr_scheduler_type="cosine",
         num_train_epochs=num_epochs,
@@ -403,7 +408,7 @@ training_args = Seq2SeqTrainingArguments(
         eval_steps=eval_steps,
         logging_strategy="steps",
         save_total_limit=3,
-        fp16=False,
+        fp16=True,
         max_grad_norm=0.99,  
         weight_decay=0.01,
         
