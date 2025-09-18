@@ -384,6 +384,9 @@ target_modules = [
 modules_to_save = None
 
 num_epochs = int(input('Number of epochs : '))
+eval_steps = 100
+if num_epochs > 25000:
+    eval_steps = 1000
 training_args = Seq2SeqTrainingArguments(
         output_dir="./dit_bart_lora_v6",
         per_device_train_batch_size=4,
@@ -395,7 +398,7 @@ training_args = Seq2SeqTrainingArguments(
         warmup_ratio=0.1,  
         logging_steps=50,
         save_steps=50,
-        eval_steps=50,
+        eval_steps=eval_steps,
         logging_strategy="steps",
         save_total_limit=3,
         fp16=False,
