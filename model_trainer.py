@@ -387,17 +387,19 @@ num_epochs = int(input('Number of epochs : '))
 eval_steps = 100
 if num_epochs > 25000:
     eval_steps = 1000
+
+save_steps = eval_steps // 2
 training_args = Seq2SeqTrainingArguments(
         output_dir="./dit_bart_lora_v6",
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=4,
-        gradient_accumulation_steps=4,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        gradient_accumulation_steps=2,
         learning_rate=1e-4,  
         lr_scheduler_type="cosine",
         num_train_epochs=num_epochs,
         warmup_ratio=0.1,  
         logging_steps=50,
-        save_steps=50,
+        save_steps=save_steps,
         eval_steps=eval_steps,
         logging_strategy="steps",
         save_total_limit=3,
