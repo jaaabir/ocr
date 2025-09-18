@@ -31,6 +31,11 @@ list_files_in_bucket = lambda supabase, bucket_name, path : [f"{path}/{i['name']
 def load_buffer_to_np(supabase, fname, bucket_name = None):
     if bucket_name is None:
         os.environ['BUCKET_NAME']
-    buffer = retreive_data_from_bucket(supabase, fname, bucket_name)
-    img = Image.open(BytesIO(buffer)).convert("RGB")
+
+    try:
+        buffer = retreive_data_from_bucket(supabase, fname, bucket_name)
+        img = Image.open(BytesIO(buffer)).convert("RGB")
+    except Exception as e:
+        print(e)
+        return None 
     return np.array(img, dtype="uint8")

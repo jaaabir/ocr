@@ -400,6 +400,7 @@ training_args = Seq2SeqTrainingArguments(
         per_device_eval_batch_size=batch_size,
         gradient_accumulation_steps=grad_accumulation,
         learning_rate=1e-4,  
+        optim='adamw_torch',
         lr_scheduler_type="cosine",
         num_train_epochs=num_epochs,
         warmup_ratio=0.1,  
@@ -411,7 +412,6 @@ training_args = Seq2SeqTrainingArguments(
         fp16=True,
         max_grad_norm=0.99,  
         weight_decay=0.01,
-        
         dataloader_pin_memory=False,
         predict_with_generate=True,
         generation_max_length=512,
@@ -425,6 +425,8 @@ training_args = Seq2SeqTrainingArguments(
         metric_for_best_model="eval_loss",
         load_best_model_at_end=True,  
         greater_is_better=False,
+        
+        # deepspeed='ds_config.json'
         )
 
 _, _, ovmodel = init_dit_bart_models_fixed()
@@ -448,7 +450,12 @@ trainer, model, image_processor, text_tokenizer = setup_dit_bart_training(
         callbacks=[early_stopping_callback]
     )
 
-history = trainer.train()
+try:
+    history = trainer.train()
+    trainer.save_model(f"./{run_name}_final_model")
+    history.to_csv(f"{run_name}_history.csv", index = False)
+except:
+    trainer.save_model(f"./{run_name}_final_model")
 
-trainer.save_model(f"./{run_name}_final_model")
+print('DONE')
 

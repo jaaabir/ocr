@@ -127,13 +127,78 @@ def read_json(fname, encoding='utf-8'):
     return data
 
 
+import cv2
+import numpy as np
+
+def render_text_image(h: int, w: int, text: str, 
+                      font_scale: float = 1.0, thickness: int = 2,
+                      bg_color=(255, 255, 255), text_color=(0, 0, 0)):
+    # Create a blank image with given background color
+    img = np.full((h, w, 3), bg_color, dtype=np.uint8)
+
+    # Font settings
+    font = cv2.FONT_HERSHEY_SIMPLEX
+
+    # Get boundary of text
+    (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+
+    # Center the text
+    x = (w - text_w) // 2
+    y = (h + text_h) // 2
+
+    # Render the text
+    cv2.putText(img, text, (x, y), font, font_scale, text_color, thickness, cv2.LINE_AA)
+
+    return img
+
+
+def get_random_word(lang):
+    """
+    Selects a random word from a corpus.
+
+    Args:
+        corpus (list[str] or str): If list, picks directly from it. 
+                                   If str, treats it as a path to a text file (one word per line or space-separated).
+
+    Returns:
+        str: A randomly selected word.
+    """
+    words = []
+
+    corpus = 'eng_sample_corpus.txt' if lang == 'en' else 'pt_sample_corpus.txt'
+
+    # If corpus is a filepath (string), read words
+    if isinstance(corpus, str):
+        with open(corpus, "r", encoding="utf-8") as f:
+            text = f.read()
+            # Split by whitespace
+            words = text.split()
+    elif isinstance(corpus, list):
+        words = corpus
+    else:
+        raise TypeError("Corpus must be a list of words or a filepath (str).")
+
+    if not words:
+        raise ValueError("Corpus is empty!")
+
+    return ' '.join(np.random.choice(words, 2))
+
+# Example usage
+if __name__ == "__main__":
+    img = render_text_image(300, 600, "Hello OCR!", font_scale=2.0, thickness=3,
+                            bg_color=(255, 255, 255), text_color=(0, 0, 0))
+    cv2.imwrite("output_text.png", img)
+
+
+
 get_language = lambda x, from_supabase = False : Path(x).parts[0 if from_supabase else 2].split('_')[-1]
 get_split = lambda x : x.split('\\')[3]
 local_fpath_to_supbase_fpath = lambda path : f"SynthDog_{get_language(path)}/{get_split(path)}/{get_basename(path)}" 
 
 class SynthDogDataset(Dataset):
     def __init__(self, image_path = None, output_jsons_path = None, image_feature_extractor = None, text_tokenizer = None, max_token_size = 512, n_channels = 3, 
-                 return_processed_outputs = True, required_input_ids=False, sample_size = -1, read_images_from_supabase = False, split='train', env_path=os.path.join(os.getcwd(), '.env')):
+                 return_processed_outputs = True, required_input_ids=False, sample_size = -1, read_images_from_supabase = False, split='train', 
+                 env_path=os.path.join(os.getcwd(), '.env'), img_size = (224,224)):
         dotenv.load_dotenv(env_path)
         self.supabase = init_supabase(os.environ['COMU_SUPABASE_URL'], os.environ['COMU_SUPABASE_API_KEY'])
         self.bucket_name = os.environ['COMU_BUCKET_NAME']
@@ -154,7 +219,7 @@ class SynthDogDataset(Dataset):
         self.required_input_ids = required_input_ids
         self.total_languages = len(output_jsons_path)
         self.read_images_from_supabase = read_images_from_supabase
-
+        self.H, self.W = img_size
 
         if sample_size > 0:
             print(self.data[:2])
@@ -203,8 +268,12 @@ class SynthDogDataset(Dataset):
         image = cv2.imread(image_path) if not self.read_images_from_supabase else load_buffer_to_np(self.supabase, image_path, self.bucket_name)
         kname = fname + '_' + language
         metadata = self.json_metadata.get(kname)
-        # print(kname)
         target_text = json.loads(metadata).get('gt_parse').get('text_sequence')
+
+        if image is None:
+            print("Image is none, generating a sample image and text...")
+            target_text = get_random_word(language)
+            image = render_text_image(self.H, self.W, target_text)
 
         if self.n_channels == 2 and len(image.shape) == 3:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
