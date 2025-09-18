@@ -56,8 +56,17 @@ test_synthdataset = SynthDogDataset(output_jsons_path=test_json_metadata, image_
 
 model_config_version = 'v6'
 run_name = input('Run name: ')
+checkpoint_name = input('Checkpoint name: ')
+
 if run_name == '':
-    run_name = f"dit_bart_{sample_size}_samples_{model_config_version}" 
+    run_name = "dit_bart" 
+
+if checkpoint_name == '':
+    checkpoint_name = run_name
+
+batch_size = int(input('Batch size: '))
+run_name = run_name + f"_{sample_size}_samples_{model_config_version}"
+    
 wandb.init(project="ocr model", name=run_name)
 
 def improved_collate_fn(batch, text_tokenizer, max_length=max_token_size):
@@ -257,9 +266,9 @@ def setup_dit_bart_training(train_dataset, val_dataset, training_args=None, run_
     if training_args is None:
         print('Training args not provided, using defaults.')
         training_args = Seq2SeqTrainingArguments(
-            output_dir="./dit_bart_outputs_fixed",
-            per_device_train_batch_size=4,
-            per_device_eval_batch_size=4,
+            output_dir=f"./{checkpoint_name}",
+            per_device_train_batch_size=batch_size,
+            per_device_eval_batch_size=batch_size,
             gradient_accumulation_steps=4,  # Effective batch size = 16
             learning_rate=1e-5,  # Lower learning rate
             num_train_epochs=5,
