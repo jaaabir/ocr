@@ -272,6 +272,7 @@ class SynthDogDataset(Dataset):
 
         if image is None:
             print("Image is none, generating a sample image and text...")
+            print(f"Image path: {image_path}")
             target_text = get_random_word(language)
             image = render_text_image(self.H, self.W, target_text)
 
