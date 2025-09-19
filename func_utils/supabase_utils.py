@@ -26,7 +26,7 @@ def retreive_data_from_table(supabase, table_name = None, limit = -1):
     return res.execute().data
 
 retreive_data_from_bucket = lambda supabase,fname,bucket_name: supabase.storage.from_(bucket_name).download(fname)
-list_files_in_bucket = lambda supabase, bucket_name, path : [f"{path}/{i['name']}" for i in supabase.storage.from_(bucket_name).list(path, options={'limit':21000})]
+list_files_in_bucket = lambda supabase, bucket_name, path, limit = 21000, get_full_path = True : [f"{path}/{i['name']}" if get_full_path else i['name'] for i in supabase.storage.from_(bucket_name).list(path, options={'limit':limit})]
 
 def load_buffer_to_np(supabase, fname, bucket_name = None):
     if bucket_name is None:
