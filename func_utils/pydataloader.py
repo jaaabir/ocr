@@ -199,11 +199,11 @@ class SynthDogDataset(Dataset):
     def __init__(self, image_path = None, output_jsons_path = None, image_feature_extractor = None, text_tokenizer = None, max_token_size = 512, n_channels = 3, 
                  return_processed_outputs = True, required_input_ids=False, sample_size = -1, read_images_from_supabase = False, split='train', 
                  env_path=os.path.join(os.getcwd(), '.env'), img_size = (224,224)):
-        dotenv.load_dotenv(env_path)
-        self.supabase = init_supabase(os.environ['COMU_SUPABASE_URL'], os.environ['COMU_SUPABASE_API_KEY'])
-        self.bucket_name = os.environ['COMU_BUCKET_NAME']
         # self.data = image_path if not read_images_from_supabase else list_files_in_bucket(self.supabase, self.bucket_name, path)
         if read_images_from_supabase:
+            dotenv.load_dotenv(env_path)
+            self.supabase = init_supabase(os.environ['COMU_SUPABASE_URL'], os.environ['COMU_SUPABASE_API_KEY'])
+            self.bucket_name = os.environ['COMU_BUCKET_NAME']
             en = list_files_in_bucket(self.supabase, self.bucket_name, f'SynthDog_en/{split}')
             pt = list_files_in_bucket(self.supabase, self.bucket_name, f'SynthDog_pt/{split}')
             self.data = en + pt
@@ -234,7 +234,7 @@ class SynthDogDataset(Dataset):
                 gt = jdata['ground_truth']
                 self.json_metadata[fname] = gt
 
-        if len(self.data) != len(self.json_metadata): print(f"Length of _.images: {len(self.data)} | Length of _.json_metadata: {len(self.json_metadata)}")
+        print(f"Length of _.images: {len(self.data)} | Length of _.json_metadata: {len(self.json_metadata)}")
 
     def __len__(self):
         return len(self.data)
