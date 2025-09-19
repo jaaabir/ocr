@@ -456,12 +456,16 @@ trainer, model, image_processor, text_tokenizer = setup_dit_bart_training(
         callbacks=[early_stopping_callback]
     )
 
+save_model_path = 'saved_models'
+os.makedirs(save_model_path, exist_ok=True)
+model_save_path = f"{save_model_path}/{run_name}_final_model"
 try:
     history = trainer.train()
-    trainer.save_model(f"./{run_name}_final_model")
+    trainer.save_model(model_save_path)
     history.to_csv(f"{run_name}_history.csv", index = False)
-except:
-    trainer.save_model(f"./{run_name}_final_model")
+except Exception as e:
+    print(e)
+    trainer.save_model(save_model_path)
 
 print('DONE')
 
