@@ -22,7 +22,7 @@ def download_files_from_bucket(supabase, bucket_name: str, path: str, local_base
             data = retreive_data_from_bucket(supabase, file_path, bucket_name)
 
             # Create local path
-            local_path = os.path.join(local_base_path, file_path)
+            local_path = os.path.join(local_base_path, file_path.replace("SynthDog_", "SynthDoG_"))
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
 
             # Write file
@@ -30,15 +30,14 @@ def download_files_from_bucket(supabase, bucket_name: str, path: str, local_base
                 f.write(data)
 
             print(f"Downloaded: {file_path} -> {local_path}")
-            break
 
         except Exception as e:
             print(f"Failed to download {file_path}: {e}")
 
 
 def main(api, url, bucket_name):
-    SUPABASE = init_supabase(url, api_key)
-    Langs = ['SynthDog_en', 'SynthDog_pt']
+    SUPABASE = init_supabase(url, api)
+    Langs = ['SynthDog_en', 'SynthDog_pt']  
     Splits = ['train', 'validation', 'test']
     local_root = os.path.join('synthdog', 'outputs_ol')
 

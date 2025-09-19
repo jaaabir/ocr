@@ -193,7 +193,7 @@ if __name__ == "__main__":
 
 get_language = lambda x, from_supabase = False : Path(x).parts[0 if from_supabase else 2].split('_')[-1]
 get_split = lambda x : x.split('\\')[3]
-local_fpath_to_supbase_fpath = lambda path : f"SynthDog_{get_language(path)}/{get_split(path)}/{get_basename(path)}" 
+local_fpath_to_supbase_fpath = lambda path : f"SynthDoG_{get_language(path)}/{get_split(path)}/{get_basename(path)}" 
 
 class SynthDogDataset(Dataset):
     def __init__(self, image_path = None, output_jsons_path = None, image_feature_extractor = None, text_tokenizer = None, max_token_size = 512, n_channels = 3, 

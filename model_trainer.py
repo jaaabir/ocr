@@ -36,9 +36,9 @@ def get_synth_images_json_path(data_root= os.path.join('synthdog','outputs'), sp
 torch.cuda.empty_cache()
 
 root_path = os.path.join('synthdog', 'outputs_ol')
-_, train_json_metadata = get_synth_images_json_path(data_root=root_path, split='train')
-_, val_json_metadata = get_synth_images_json_path(data_root=root_path, split='validation')
-_, test_json_metadata = get_synth_images_json_path(data_root=root_path, split='test')
+train_image_path, train_json_metadata = get_synth_images_json_path(data_root=root_path, split='train')
+val_image_path, val_json_metadata = get_synth_images_json_path(data_root=root_path, split='validation')
+test_image_path, test_json_metadata = get_synth_images_json_path(data_root=root_path, split='test')
 processor, text_tokenizer, _ = init_dit_bart_models_fixed()
 # model.gradient_checkpointing_enable()
 
@@ -47,12 +47,16 @@ print(f"The model as is is holding: {peak_mem / 1024**3:.2f} of GPU RAM")
 
 max_token_size = 512
 sample_size = int(input('sample size: '))
-train_synthdataset = SynthDogDataset(output_jsons_path=train_json_metadata, image_feature_extractor=processor, 
-                                     text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, read_images_from_supabase=True, split='train')
-val_synthdataset = SynthDogDataset(output_jsons_path=val_json_metadata, image_feature_extractor=processor, 
-                                   text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, read_images_from_supabase=True, split='validation')
-test_synthdataset = SynthDogDataset(output_jsons_path=test_json_metadata, image_feature_extractor=processor, 
-                                    text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, read_images_from_supabase=True, split='test') 
+fetch_from_supabase = False
+train_synthdataset = SynthDogDataset(image_path=train_image_path,output_jsons_path=train_json_metadata, image_feature_extractor=processor, 
+                                     text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, 
+                                     read_images_from_supabase=fetch_from_supabase, split='train')
+val_synthdataset = SynthDogDataset(image_path=val_image_path,output_jsons_path=val_json_metadata, image_feature_extractor=processor, 
+                                   text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, 
+                                   read_images_from_supabase=fetch_from_supabase, split='validation')
+test_synthdataset = SynthDogDataset(image_path=test_image_path,output_jsons_path=test_json_metadata, image_feature_extractor=processor, 
+                                    text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, 
+                                    read_images_from_supabase=fetch_from_supabase, split='test') 
 
 model_config_version = 'v6'
 run_name = input('Run name: ')
@@ -65,7 +69,7 @@ if checkpoint_name == '':
     checkpoint_name = run_name
 
 batch_size = int(input('Batch size: '))
-run_name = run_name + f"_{sample_size}_samples_{model_config_version}"
+run_name = run_name + f"_{sample_size if sample_size > 0 else 'all'}_samples_{model_config_version}"
     
 wandb.init(project="ocr model", name=run_name)
 
