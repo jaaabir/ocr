@@ -387,6 +387,8 @@ target_modules = [
 ]
 modules_to_save = None
 
+lr = input('Learning rate: ')
+
 num_epochs = int(input('Number of epochs : '))
 eval_steps = 100
 grad_accumulation = 2
@@ -403,7 +405,7 @@ training_args = Seq2SeqTrainingArguments(
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         gradient_accumulation_steps=grad_accumulation,
-        learning_rate=1e-4,  
+        learning_rate=lr,  
         optim='adamw_torch',
         lr_scheduler_type="cosine",
         num_train_epochs=num_epochs,
