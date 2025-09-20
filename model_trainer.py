@@ -400,8 +400,10 @@ save_steps = eval_steps
 
 print(f'Total training steps: {total_training_steps}')
 print(f'Eval steps & Save steps: {eval_steps}')
+ckpt_path = 'checkpoints'
+os.makedirs(ckpt_path, exist_ok=True)
 training_args = Seq2SeqTrainingArguments(
-        output_dir="./dit_bart_lora_v6",
+        output_dir=f"./{ckpt_path}",
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         gradient_accumulation_steps=grad_accumulation,
@@ -416,12 +418,12 @@ training_args = Seq2SeqTrainingArguments(
         logging_strategy="steps",
         save_total_limit=3,
         fp16=True,
-        max_grad_norm=0.99,  
-        weight_decay=0.01,
+        max_grad_norm=1.0,  
+        weight_decay=lr*.1,
         dataloader_pin_memory=False,
         predict_with_generate=True,
         generation_max_length=512,
-        generation_num_beams=10,
+        generation_num_beams=6,
         report_to=["wandb"],
         run_name=run_name,
         save_safetensors=False,
