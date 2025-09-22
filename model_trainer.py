@@ -402,6 +402,7 @@ print(f'Total training steps: {total_training_steps}')
 print(f'Eval steps & Save steps: {eval_steps}')
 ckpt_path = 'checkpoints'
 os.makedirs(ckpt_path, exist_ok=True)
+max_grad_norm = float(input('Max Grad Norm: '))
 training_args = Seq2SeqTrainingArguments(
         output_dir=f"./{ckpt_path}/{checkpoint_name}",
         per_device_train_batch_size=batch_size,
@@ -418,7 +419,7 @@ training_args = Seq2SeqTrainingArguments(
         logging_strategy="steps",
         save_total_limit=3,
         fp16=False,
-        max_grad_norm=2.5,  
+        max_grad_norm=max_grad_norm,  
         
         weight_decay=0.01,
         dataloader_pin_memory=False,
@@ -461,7 +462,7 @@ print_trainable_prams(ovmodel)
 
 
 early_stopping_callback = EarlyStoppingCallback(
-    early_stopping_patience=10
+    early_stopping_patience=15
 )
 trainer, model, image_processor, text_tokenizer = setup_dit_bart_training(
         train_synthdataset, val_synthdataset, training_args=training_args, loaded_model = ovmodel, run_name = run_name, 
