@@ -381,7 +381,7 @@ def freeze_encoder_unfreeze_decoder(model,
 
 r=32
 alpha=r*2
-dropout=0.1
+dropout=0.25
 target_modules = [
         "q_proj", "k_proj", "v_proj", "out_proj"
 ]
@@ -391,7 +391,7 @@ lr = float(input('Learning rate: '))
 
 num_epochs = int(input('Number of epochs : '))
 eval_steps = 100
-grad_accumulation = 2
+grad_accumulation = 1
 steps_per_epoch = len(train_synthdataset)/(batch_size*1*grad_accumulation)
 total_training_steps = int(steps_per_epoch * num_epochs)
 if total_training_steps > 25000:
@@ -403,7 +403,7 @@ print(f'Eval steps & Save steps: {eval_steps}')
 ckpt_path = 'checkpoints'
 os.makedirs(ckpt_path, exist_ok=True)
 training_args = Seq2SeqTrainingArguments(
-        output_dir=f"./{ckpt_path}",
+        output_dir=f"./{ckpt_path}/{checkpoint_name}",
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         gradient_accumulation_steps=grad_accumulation,
@@ -413,13 +413,14 @@ training_args = Seq2SeqTrainingArguments(
         num_train_epochs=num_epochs,
         warmup_ratio=0.1,  
         logging_steps=50,
-        save_steps=save_steps,
-        eval_steps=eval_steps,
+        # save_steps=save_steps,
+        # eval_steps=eval_steps,
         logging_strategy="steps",
         save_total_limit=3,
         fp16=False,
-        max_grad_norm=0.99,  
-        weight_decay=lr*.1,
+        max_grad_norm=2.5,  
+        
+        weight_decay=0.01,
         dataloader_pin_memory=False,
         predict_with_generate=True,
         generation_max_length=512,
@@ -428,8 +429,8 @@ training_args = Seq2SeqTrainingArguments(
         run_name=run_name,
         save_safetensors=False,
 
-        eval_strategy="steps",
-        save_strategy="steps",
+        eval_strategy="epoch",
+        save_strategy="epoch",
         metric_for_best_model="eval_loss",
         load_best_model_at_end=True,  
         greater_is_better=False,
@@ -440,18 +441,27 @@ training_args = Seq2SeqTrainingArguments(
 _, _, ovmodel = init_dit_bart_models_fixed()
 ovmodel = add_lora_to_decoder(ovmodel, r=r, alpha=alpha, dropout=dropout, target_modules=target_modules, modules_to_save=modules_to_save)
 ovmodel = unfreeze_all_params(ovmodel, unfreeze_encoder=False, unfreeze_decoder=True)
-ovmodel.config.max_length = 512
+ovmodel.add_cross_attention = True
+ovmodel.config.max_length = max_token_size
+ovmodel.config.decoder.max_length = max_token_size
 ovmodel.config.min_length = 1
+ovmodel.config.decoder.min_length = 1
 ovmodel.config.no_repeat_ngram_size = 0
-ovmodel.config.repetition_penalty = 2.0
+ovmodel.config.repetition_penalty = 1.5
 ovmodel.config.length_penalty = 1.0 
 ovmodel.config.early_stopping = True
 ovmodel.config.num_beams = 6
+ovmodel.config.use_cache = False  
+ovmodel.config.is_encoder_decoder = True
+ovmodel.config.do_sample = False  
+ovmodel.config.tie_word_embeddings = True
+ovmodel.config.decoder.dropout = dropout
+ovmodel.config.decoder.decoder_layerdrop = 0.05
 print_trainable_prams(ovmodel)
 
 
 early_stopping_callback = EarlyStoppingCallback(
-    early_stopping_patience=15, early_stopping_threshold=0.0001
+    early_stopping_patience=10
 )
 trainer, model, image_processor, text_tokenizer = setup_dit_bart_training(
         train_synthdataset, val_synthdataset, training_args=training_args, loaded_model = ovmodel, run_name = run_name, 

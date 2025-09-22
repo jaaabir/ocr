@@ -107,22 +107,20 @@ def init_dit_bart_models_fixed(
     encoder_decoder_model.config.eos_token_id = text_tokenizer.eos_token_id
     encoder_decoder_model.config.vocab_size = text_tokenizer.vocab_size
     
-    encoder_decoder_model.config.use_cache = False  
-    encoder_decoder_model.config.is_encoder_decoder = True
+    # encoder_decoder_model.config.use_cache = False  
+    # encoder_decoder_model.config.is_encoder_decoder = True
+    # encoder_decoder_model.add_cross_attention = True
+    # encoder_decoder_model.config.max_length = 512
+    # encoder_decoder_model.config.min_length = 1
+    # encoder_decoder_model.config.no_repeat_ngram_size = 2
+    # encoder_decoder_model.config.early_stopping = True
+    # encoder_decoder_model.config.length_penalty = 1.5
+    # encoder_decoder_model.config.num_beams = 3
+    # encoder_decoder_model.config.repetition_penalty = 1.3
+    # encoder_decoder_model.config.do_sample = False  
+    # encoder_decoder_model.config.tie_word_embeddings = True
     
-    encoder_decoder_model.config.max_length = 512
-    encoder_decoder_model.config.min_length = 5
-    encoder_decoder_model.config.no_repeat_ngram_size = 2
-    encoder_decoder_model.config.early_stopping = True
-    encoder_decoder_model.config.length_penalty = 1.5
-    encoder_decoder_model.config.num_beams = 3
-    encoder_decoder_model.config.repetition_penalty = 1.3
-    encoder_decoder_model.config.do_sample = False  
-    
-    if hasattr(encoder_decoder_model.decoder.config, 'tie_word_embeddings'):
-        encoder_decoder_model.decoder.config.tie_word_embeddings = True
-    
-    encoder_decoder_model.decoder.config.vocab_size = text_tokenizer.vocab_size
+    encoder_decoder_model.config.vocab_size = text_tokenizer.vocab_size
     encoder_decoder_model.decoder.resize_token_embeddings(len(text_tokenizer))
 
     encoder_decoder_model.generation_config.bos_token_id = text_tokenizer.bos_token_id
