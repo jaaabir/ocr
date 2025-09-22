@@ -470,13 +470,10 @@ trainer, model, image_processor, text_tokenizer = setup_dit_bart_training(
 
 save_model_path = 'saved_models'
 os.makedirs(save_model_path, exist_ok=True)
-os.makedirs('history', exist_ok=True)
 model_save_path = f"{save_model_path}/{run_name}_final_model"
-history_save_path = f"history/{run_name}_history.csv"
 try:
     history = trainer.train()
     trainer.save_model(model_save_path)
-    history.to_csv(history_save_path, index = False)
 except Exception as e:
     print(e)
     trainer.save_model(save_model_path)
