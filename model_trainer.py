@@ -378,16 +378,58 @@ def freeze_encoder_unfreeze_decoder(model,
         print_trainable_prams(model)
     return model
 
+def unfreeze_last_n_encoder(model, 
+                            unfreeze_last_n_layer_block=2,
+                            unfreeze_attention_layers=False,
+                            skip_encoder=False,
+                            skip_decoder=False,
+                            verbose=True):
+    """
+    Freeze the decoder and selectively unfreeze the last N layers of the encoder (DiT).
+
+    Args:
+        model: VisionEncoderDecoderModel
+        unfreeze_last_n_layers (int): How many of the final encoder blocks to unfreeze
+        train_encoder_embeddings (bool): Whether to also unfreeze encoder embeddings (patch + pos)
+        skip_encoder (bool): If True, skip freezing encoder
+        skip_decoder (bool): If True, skip freezing decoder
+        verbose (bool): Print trainable params
+    """
+
+    # Step 1: Freeze everything
+    model = unfreeze_all_params(model, 
+                                unfreeze_encoder=False, 
+                                unfreeze_decoder=False, 
+                                skip_encoder=skip_encoder, 
+                                skip_decoder=skip_decoder)
+
+    
+    if unfreeze_attention_layers:
+        for layer in model.encoder.encoder.layer:
+            for param in layer.attention.parameters():
+                param.requires_grad = True
+
+    if unfreeze_last_n_layer_block > 0:
+        for layer in model.encoder.encoder.layer[-unfreeze_last_n_layer_block:]:
+            for param in layer.parameters():
+                param.requires_grad = True
+
+    if verbose:
+        print(f"Encoder partially trainable (last {unfreeze_last_n_layer_block} layers")
+        print_trainable_prams(model)
+
+    return model
+
 
 r=32
 alpha=r*2
-dropout=0.25
+dropout=0.35
 target_modules = [
         "q_proj", "k_proj", "v_proj", "out_proj"
 ]
 modules_to_save = None
 
-lr = float(input('Learning rate: '))
+lr = float(input('Learning rate: ')) # recommended : 1e-4, 5e-5 >=. 
 
 num_epochs = int(input('Number of epochs : '))
 eval_steps = 100
@@ -402,7 +444,7 @@ print(f'Total training steps: {total_training_steps}')
 print(f'Eval steps & Save steps: {eval_steps}')
 ckpt_path = 'checkpoints'
 os.makedirs(ckpt_path, exist_ok=True)
-max_grad_norm = float(input('Max Grad Norm: '))
+max_grad_norm = float(input('Max Grad Norm: ')) # recommended : 10
 training_args = Seq2SeqTrainingArguments(
         output_dir=f"./{ckpt_path}/{checkpoint_name}",
         per_device_train_batch_size=batch_size,
@@ -442,6 +484,7 @@ training_args = Seq2SeqTrainingArguments(
 _, _, ovmodel = init_dit_bart_models_fixed()
 ovmodel = add_lora_to_decoder(ovmodel, r=r, alpha=alpha, dropout=dropout, target_modules=target_modules, modules_to_save=modules_to_save)
 ovmodel = unfreeze_all_params(ovmodel, unfreeze_encoder=False, unfreeze_decoder=True)
+ovmodel = unfreeze_last_n_encoder(ovmodel, unfreeze_last_n_layer_block=1, unfreeze_attention_layers=True, skip_encoder=True, skip_decoder=True)
 ovmodel.add_cross_attention = True
 ovmodel.config.max_length = max_token_size
 ovmodel.config.decoder.max_length = max_token_size
@@ -457,7 +500,8 @@ ovmodel.config.is_encoder_decoder = True
 ovmodel.config.do_sample = False  
 ovmodel.config.tie_word_embeddings = True
 ovmodel.config.decoder.dropout = dropout
-ovmodel.config.decoder.decoder_layerdrop = 0.05
+ovmodel.config.decoder.attention_dropout = 0.15
+ovmodel.config.decoder.decoder_layerdrop = 0.1
 print_trainable_prams(ovmodel)
 
 
