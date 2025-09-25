@@ -1,7 +1,7 @@
 import torch 
 from transformers import (
-    VisionEncoderDecoderModel, AutoImageProcessor, T5Tokenizer, 
-    AutoModel, T5ForConditionalGeneration, AutoTokenizer, 
+    VisionEncoderDecoderModel, AutoImageProcessor, T5ForConditionalGeneration, 
+    AutoModel, AutoModelForCausalLM, AutoTokenizer, 
     PerceptionLMForConditionalGeneration, PerceptionLMProcessor,
     AutoProcessor, AutoModelForImageTextToText, PreTrainedTokenizerFast )
 
@@ -82,6 +82,40 @@ def init_dit_gpt_models(encoder_model="microsoft/dit-base-finetuned-rvlcdip", de
 
     return image_processor, text_tokenizer, encoder_decoder_model
 
+def init_dit_mbert_models_fixed(
+    encoder_model="microsoft/dit-base-finetuned-rvlcdip",
+    decoder_model="jhu-clsp/ettin-decoder-32m",
+):
+    """
+    Fixed version of DiT-Modern Bert Decoder initialization with proper cross-attention setup.
+    """
+
+    dit = AutoModel.from_pretrained(encoder_model)
+    mbert = AutoModelForCausalLM.from_pretrained(decoder_model)
+    encoder_decoder_model = VisionEncoderDecoderModel(encoder = dit, decoder= mbert)
+
+    image_processor = AutoImageProcessor.from_pretrained(encoder_model, use_fast=True)
+    text_tokenizer = AutoTokenizer.from_pretrained(decoder_model, use_fast=True)
+
+    if text_tokenizer.pad_token is None:
+        text_tokenizer.pad_token = text_tokenizer.eos_token
+
+    encoder_decoder_model.config.decoder_start_token_id = text_tokenizer.pad_token_id
+    encoder_decoder_model.config.pad_token_id = text_tokenizer.pad_token_id
+    encoder_decoder_model.config.eos_token_id = text_tokenizer.eos_token_id
+    encoder_decoder_model.config.vocab_size = text_tokenizer.vocab_size
+    
+    encoder_decoder_model.config.vocab_size = text_tokenizer.vocab_size
+    encoder_decoder_model.decoder.resize_token_embeddings(len(text_tokenizer))
+
+    encoder_decoder_model.generation_config.bos_token_id = text_tokenizer.bos_token_id
+    encoder_decoder_model.generation_config.eos_token_id = text_tokenizer.eos_token_id
+    encoder_decoder_model.generation_config.pad_token_id = text_tokenizer.pad_token_id
+
+    encoder_decoder_model.config.tie_word_embeddings = True
+
+    return image_processor, text_tokenizer, encoder_decoder_model
+
 
 def init_dit_bart_models_fixed(
     encoder_model="microsoft/dit-base-finetuned-rvlcdip",
@@ -130,31 +164,41 @@ def init_dit_bart_models_fixed(
     return image_processor, text_tokenizer, encoder_decoder_model
 
 
-def init_dit_t5_models(encoder_model="microsoft/dit-base-finetuned-rvlcdip", decoder_model="google/t5-v1_1-base"):
-
-    encoder = AutoModel.from_pretrained(encoder_model)
-
-    full_t5 = T5ForConditionalGeneration.from_pretrained(decoder_model)
-    decoder = full_t5.get_decoder()   # get only the decoder part
-    decoder.config.is_decoder = True
-    decoder.config.is_encoder_decoder = False
-    decoder.config.add_cross_attention = True
-
-
-    # Initialize the VisionEncoderDecoderModel
+def init_dit_t5_models_fixed(
+    encoder_model="microsoft/dit-base-finetuned-rvlcdip",
+    decoder_model="google-t5/t5-base",
+):
+    """
+    Fixed version of DiT-T5 initialization with proper cross-attention setup.
+    """
+    dit = AutoModel.from_pretrained(encoder_model)
+    t5 = T5ForConditionalGeneration.from_pretrained(decoder_model)
     encoder_decoder_model = VisionEncoderDecoderModel(
-        encoder=encoder,
-        decoder=decoder,
-
+        encoder=dit, decoder=t5
     )
+    t5.config.is_encoder_decoder = False
+    t5.config.is_decoder = True
+    t5.config.add_cross_attention = True
 
-    # Initialize the image processor for the DiT encoder
     image_processor = AutoImageProcessor.from_pretrained(encoder_model, use_fast=True)
-
-    text_tokenizer = T5Tokenizer.from_pretrained(decoder_model)
+    text_tokenizer = AutoTokenizer.from_pretrained(decoder_model, use_fast=True)
 
     if text_tokenizer.pad_token is None:
         text_tokenizer.pad_token = text_tokenizer.eos_token
+
+    encoder_decoder_model.config.decoder_start_token_id = text_tokenizer.pad_token_id
+    encoder_decoder_model.config.pad_token_id = text_tokenizer.pad_token_id
+    encoder_decoder_model.config.eos_token_id = text_tokenizer.eos_token_id
+    encoder_decoder_model.config.vocab_size = text_tokenizer.vocab_size
+    
+    encoder_decoder_model.config.vocab_size = text_tokenizer.vocab_size
+    encoder_decoder_model.decoder.resize_token_embeddings(len(text_tokenizer))
+
+    encoder_decoder_model.generation_config.bos_token_id = text_tokenizer.bos_token_id
+    encoder_decoder_model.generation_config.eos_token_id = text_tokenizer.eos_token_id
+    encoder_decoder_model.generation_config.pad_token_id = text_tokenizer.pad_token_id
+
+    encoder_decoder_model.config.tie_word_embeddings = True
 
     return image_processor, text_tokenizer, encoder_decoder_model
 

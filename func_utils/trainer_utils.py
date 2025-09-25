@@ -1,86 +1,9 @@
-from func_utils.plot_utils import show_image
-import matplotlib.pyplot as plt 
-from glob import glob
-import pandas as pd 
-import numpy as np 
-import json
-import os 
-
-
 import torch 
-from torch.utils.data import DataLoader
-from func_utils.pydataloader import SynthDogDataset
-from encoder_decoder_model import init_dit_bart_models_fixed, add_lora_to_decoder, add_lora_to_encoder_decoder
-
-
 import evaluate 
 from torch.nn.utils.rnn import pad_sequence
 from transformers import Seq2SeqTrainingArguments, Seq2SeqTrainer, EarlyStoppingCallback
 
-import wandb
-import gc
-
-torch.cuda.empty_cache()
-gc.collect()
-wandb.login()
-
-decode_to_portuguese = lambda x : x.replace('Ġ','').encode('iso-8859-1').decode('utf-8')
-
-def get_synth_images_json_path(data_root= os.path.join('synthdog','outputs'), split='train'):
-    ipath = os.path.join(data_root, '*', split, '*.jpg')
-    json_path = os.path.join(data_root, '*', split, 'metadata.jsonl')
-
-    return glob(ipath), glob(json_path)
-
-
-torch.cuda.empty_cache()
-
-root_path1 = os.path.join('synthdog', 'outputs_ol')
-root_path2 = os.path.join('synth-text-generator', 'outputs')
-root_choice_ind = int(input(f"""
-Choose the root path: 
-[1] - {root_path1}
-[2] - {root_path2}
-"""))
-root_path = root_path1 if root_choice_ind == 1 else root_path2
-train_image_path, train_json_metadata = get_synth_images_json_path(data_root=root_path, split='train')
-val_image_path, val_json_metadata = get_synth_images_json_path(data_root=root_path, split='validation')
-test_image_path, test_json_metadata = get_synth_images_json_path(data_root=root_path, split='test')
-processor, text_tokenizer, _ = init_dit_bart_models_fixed()
-# model.gradient_checkpointing_enable()
-
-peak_mem = torch.cuda.max_memory_allocated()
-print(f"The model as is is holding: {peak_mem / 1024**3:.2f} of GPU RAM")
-
-max_token_size = 512
-sample_size = int(input('sample size: '))
-fetch_from_supabase = False
-train_synthdataset = SynthDogDataset(image_path=train_image_path,output_jsons_path=train_json_metadata, image_feature_extractor=processor, 
-                                     text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, 
-                                     read_images_from_supabase=fetch_from_supabase, split='train')
-val_synthdataset = SynthDogDataset(image_path=val_image_path,output_jsons_path=val_json_metadata, image_feature_extractor=processor, 
-                                   text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, 
-                                   read_images_from_supabase=fetch_from_supabase, split='validation')
-test_synthdataset = SynthDogDataset(image_path=test_image_path,output_jsons_path=test_json_metadata, image_feature_extractor=processor, 
-                                    text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, 
-                                    read_images_from_supabase=fetch_from_supabase, split='test') 
-
-model_config_version = 'v6'
-run_name = input('Run name: ')
-checkpoint_name = input('Checkpoint name: ')
-
-if run_name == '':
-    run_name = "dit_bart" 
-
-if checkpoint_name == '':
-    checkpoint_name = run_name
-
-batch_size = int(input('Batch size: '))
-run_name = run_name + f"_{sample_size if sample_size > 0 else 'all'}_samples_{model_config_version}"
-    
-wandb.init(project="ocr model", name=run_name)
-
-def improved_collate_fn(batch, text_tokenizer, max_length=max_token_size):
+def improved_collate_fn(batch, text_tokenizer, max_length=512):
     """
     Collate function with padding, truncation, and attention_mask handling.
     """
@@ -152,26 +75,32 @@ def get_immediate_repetition_ratio(decoded_preds):
             if immediate_reps > len(words) * 0.3:  # More than 30% repetition
                 repetitive_count += 1
     
-    repetitive_ratio = repetitive_count / len(decoded_preds)
-    repetitive_ratio
+    return repetitive_count / len(decoded_preds)
 
 from collections import Counter
 
 def pred_intersect_labels(preds, labels):
     scores = []
+    
     for pred, label in zip(preds, labels):
-        pred_words = pred.split()
-        label_words = label.split()
-        if not pred_words:
-            scores.append(0.0)
-            continue
-        overlap = sum((word in label_words) for word in pred_words)
-        scores.append(overlap / len(pred_words))
+        pred_count = Counter(pred.split())
+        label_count = Counter(label.split())
+        
+        # Multiset intersection (min of counts for each word)
+        common = pred_count & label_count
+        
+        overlap = sum(common.values())
+        total = sum(pred_count.values())
+        
+        score = overlap / total if total > 0 else 0
+        scores.append(score)
+    
+    # Average over all samples
     return sum(scores) / len(scores) if scores else 0
 
-bleu = evaluate.load("bleu")
 def compute_bleu(decoded_preds, decoded_labels):
     try:
+        bleu = evaluate.load("bleu")
         bleu_score = bleu.compute(predictions=decoded_preds, references=[[label] for label in decoded_labels])
         bleu_value = bleu_score["bleu"]
     except:
@@ -246,16 +175,15 @@ def test_model_before_training(model, image_processor, text_tokenizer, sample_im
                 print("Generation looks good - low repetition!")
         
         return generated_text
-
+    
 # Better training arguments
-def setup_dit_bart_training(train_dataset, val_dataset, training_args=None, run_name="model_run", loaded_model=None, callbacks=[]):
+def setup_dit_bart_training(train_dataset, val_dataset, training_args=None, run_name="model_run", 
+                            model=None, text_tokenizer=None, callbacks=[]):
     """
     Complete setup for DiT-BART training.
     """
     # Initialize model
-    image_processor, text_tokenizer, model = init_dit_bart_models_fixed()
-    if loaded_model is not None:
-        model = loaded_model
+    
     
     
     # Create collate function
@@ -270,9 +198,9 @@ def setup_dit_bart_training(train_dataset, val_dataset, training_args=None, run_
     if training_args is None:
         print('Training args not provided, using defaults.')
         training_args = Seq2SeqTrainingArguments(
-            output_dir=f"./{checkpoint_name}",
-            per_device_train_batch_size=batch_size,
-            per_device_eval_batch_size=batch_size,
+            output_dir="./dit_bart_outputs_fixed",
+            per_device_train_batch_size=4,
+            per_device_eval_batch_size=4,
             gradient_accumulation_steps=4,  # Effective batch size = 16
             learning_rate=1e-5,  # Lower learning rate
             num_train_epochs=5,
@@ -287,7 +215,7 @@ def setup_dit_bart_training(train_dataset, val_dataset, training_args=None, run_
             weight_decay=0.01,
             dataloader_pin_memory=False,
             predict_with_generate=True,
-            generation_max_length=max_token_size,
+            generation_max_length=512,
             generation_num_beams=3,
             report_to=["wandb"],  
             run_name=run_name,
@@ -305,7 +233,7 @@ def setup_dit_bart_training(train_dataset, val_dataset, training_args=None, run_
         callbacks=callbacks
     )
     
-    return trainer, model, image_processor, text_tokenizer
+    return trainer
 
 import torch.nn as nn
 
@@ -427,108 +355,48 @@ def unfreeze_last_n_encoder(model,
 
     return model
 
+def debug_model_inputs(trainer, model):
+    sample_batch = next(iter(trainer.get_train_dataloader()))
+    print("Sample batch keys:", sample_batch.keys())
+    for key, value in sample_batch.items():
+        print(f"{key}: {value.shape if hasattr(value, 'shape') else type(value)}")
+    
+    # Try a forward pass to see what happens
+    model.eval()
+    model.to('cuda')
+    print("Model device:", next(model.parameters()).device)
+    with torch.no_grad():
+        try:
+            outputs = model(**sample_batch)
+            print("Forward pass successful!")
+        except Exception as e:
+            print(f"Forward pass failed: {e}")
+    model.train()
 
-r=32
-alpha=r*2
-dropout=0.35
-target_modules = [
-        "q_proj", "k_proj", "v_proj", "out_proj"
-]
-modules_to_save = None
-
-lr = float(input('Learning rate: ')) # recommended : 1e-4, 5e-5 >=. 
-
-num_epochs = int(input('Number of epochs : '))
-eval_steps = 100
-grad_accumulation = 1
-steps_per_epoch = len(train_synthdataset)/(batch_size*1*grad_accumulation)
-total_training_steps = int(steps_per_epoch * num_epochs)
-if total_training_steps > 25000:
-    eval_steps = 1000
-save_steps = eval_steps
-
-print(f'Total training steps: {total_training_steps}')
-print(f'Eval steps & Save steps: {eval_steps}')
-ckpt_path = 'checkpoints'
-os.makedirs(ckpt_path, exist_ok=True)
-max_grad_norm = float(input('Max Grad Norm: ')) # recommended : 10
-training_args = Seq2SeqTrainingArguments(
-        output_dir=f"./{ckpt_path}/{checkpoint_name}",
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
-        gradient_accumulation_steps=grad_accumulation,
-        learning_rate=lr,  
-        optim='adamw_torch',
-        lr_scheduler_type="cosine",
-        num_train_epochs=num_epochs,
-        warmup_ratio=0.1,  
-        logging_steps=50,
-        # save_steps=save_steps,
-        # eval_steps=eval_steps,
-        logging_strategy="steps",
-        save_total_limit=3,
-        fp16=False,
-        max_grad_norm=max_grad_norm,  
-        
-        weight_decay=0.01,
-        dataloader_pin_memory=False,
-        predict_with_generate=True,
-        generation_max_length=512,
-        generation_num_beams=6,
-        report_to=["wandb"],
-        run_name=run_name,
-        save_safetensors=False,
-
-        eval_strategy="epoch",
-        save_strategy="epoch",
-        metric_for_best_model="eval_loss",
-        load_best_model_at_end=True,  
-        greater_is_better=False,
-        
-        # deepspeed='ds_config.json'
-        )
-
-_, _, ovmodel = init_dit_bart_models_fixed()
-ovmodel = add_lora_to_decoder(ovmodel, r=r, alpha=alpha, dropout=dropout, target_modules=target_modules, modules_to_save=modules_to_save)
-ovmodel = unfreeze_all_params(ovmodel, unfreeze_encoder=False, unfreeze_decoder=True)
-ovmodel = unfreeze_last_n_encoder(ovmodel, unfreeze_last_n_layer_block=1, unfreeze_attention_layers=True, skip_encoder=True, skip_decoder=True)
-ovmodel.add_cross_attention = True
-ovmodel.config.max_length = max_token_size
-ovmodel.config.decoder.max_length = max_token_size
-ovmodel.config.min_length = 1
-ovmodel.config.decoder.min_length = 1
-ovmodel.config.no_repeat_ngram_size = 0
-ovmodel.config.repetition_penalty = 1.5
-ovmodel.config.length_penalty = 1.0 
-ovmodel.config.early_stopping = True
-ovmodel.config.num_beams = 6
-ovmodel.config.use_cache = False  
-ovmodel.config.is_encoder_decoder = True
-ovmodel.config.do_sample = False  
-ovmodel.config.tie_word_embeddings = True
-ovmodel.config.decoder.dropout = dropout
-ovmodel.config.decoder.attention_dropout = 0.15
-ovmodel.config.decoder.decoder_layerdrop = 0.1
-print_trainable_prams(ovmodel)
-
-
-early_stopping_callback = EarlyStoppingCallback(
-    early_stopping_patience=15
-)
-trainer, model, image_processor, text_tokenizer = setup_dit_bart_training(
-        train_synthdataset, val_synthdataset, training_args=training_args, loaded_model = ovmodel, run_name = run_name, 
-        callbacks=[early_stopping_callback]
+def train_dit_bart(train_dataset, val_dataset, model = None, training_args=None, sample_image=None, save_model = False, save_path = "./dit_bart_final", run_name = 'dit_bart_adam'):
+    """
+    Main function to train DiT-BART model.
+    """
+    print("Starting DiT-BART training setup...")
+    
+    # Setup training
+    trainer, model, image_processor, text_tokenizer = setup_dit_bart_training(
+        train_dataset, val_dataset, training_args=training_args, loaded_model = model, run_name = run_name
     )
-
-save_model_path = 'saved_models'
-os.makedirs(save_model_path, exist_ok=True)
-model_save_path = f"{save_model_path}/{run_name}_final_model"
-try:
+    
+    # Test model before training (optional)
+    if sample_image is not None:
+        test_model_before_training(model, image_processor, text_tokenizer, sample_image)
+    
+    # Start training
+    print("Starting training...")
     history = trainer.train()
-    trainer.save_model(model_save_path)
-except Exception as e:
-    print(e)
-    trainer.save_model(save_model_path)
-
-print('DONE')
-
+    
+    # Save the final model
+    if save_model:
+        trainer.save_model(save_path)
+        image_processor.save_pretrained(save_path)
+        text_tokenizer.save_pretrained(save_path)
+    
+    print("Training completed!")
+    return trainer, model, image_processor, text_tokenizer, history
