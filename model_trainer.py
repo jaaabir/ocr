@@ -153,6 +153,7 @@ if load_model_choice == 1:
 else:
     ckpt_path = input('Relative ckpt path: ')
     ovmodel = load_pretrained_enc_dec_model(ckpt_path, r=r, alpha=alpha, dropout=dropout, target_modules=target_modules, modules_to_save=modules_to_save)
+
 ovmodel = unfreeze_all_params(ovmodel, unfreeze_encoder=False, unfreeze_decoder=True)
 ovmodel = unfreeze_last_n_encoder(ovmodel, unfreeze_last_n_layer_block=1, unfreeze_attention_layers=True, skip_encoder=True, skip_decoder=True)
 ovmodel.add_cross_attention = True
@@ -172,7 +173,7 @@ ovmodel.config.tie_word_embeddings = True
 ovmodel.config.decoder.dropout = dropout
 ovmodel.config.decoder.attention_dropout = 0.15
 ovmodel.config.decoder.decoder_layerdrop = 0.1
-print_trainable_prams(ovmodel)
+# print_trainable_prams(ovmodel)
 
 early_stop = int(input('Early stopping: '))
 early_stopping_callback = EarlyStoppingCallback(
