@@ -60,14 +60,15 @@ fetch_from_supabase = False
 train_synthdataset = SynthDogDataset(image_path=train_image_path,output_jsons_path=train_json_metadata, image_feature_extractor=processor, 
                                      text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, 
                                      read_images_from_supabase=fetch_from_supabase, split='train')
+val_sample_size = int(input('Validation sample size: ')) 
 val_synthdataset = SynthDogDataset(image_path=val_image_path,output_jsons_path=val_json_metadata, image_feature_extractor=processor, 
-                                   text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, 
+                                   text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=val_sample_size, 
                                    read_images_from_supabase=fetch_from_supabase, split='validation')
 test_synthdataset = SynthDogDataset(image_path=test_image_path,output_jsons_path=test_json_metadata, image_feature_extractor=processor, 
-                                    text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=sample_size, 
+                                    text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=val_sample_size, 
                                     read_images_from_supabase=fetch_from_supabase, split='test') 
 
-model_config_version = 'v6'
+model_config_version = 'v7'
 run_name = input('Run name: ')
 checkpoint_name = input('Checkpoint name: ')
 
@@ -117,8 +118,6 @@ training_args = Seq2SeqTrainingArguments(
         num_train_epochs=num_epochs,
         warmup_ratio=0.1,  
         logging_steps=50,
-        # save_steps=save_steps,
-        # eval_steps=eval_steps,
         logging_strategy="steps",
         save_total_limit=3,
         fp16=False,
@@ -131,15 +130,12 @@ training_args = Seq2SeqTrainingArguments(
         generation_num_beams=6,
         report_to=["wandb"],
         run_name=run_name,
-        save_safetensors=False,
-
+        save_safetensors=True,
         eval_strategy="epoch",
         save_strategy="epoch",
         metric_for_best_model="eval_loss",
         load_best_model_at_end=True,  
         greater_is_better=False,
-        
-        # deepspeed='ds_config.json'
         )
 
 load_model_choice = int(input("""

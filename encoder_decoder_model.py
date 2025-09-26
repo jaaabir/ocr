@@ -23,11 +23,19 @@ def load_pretrained_enc_dec_model(pre_trained_ckpt_path,
     dec = AutoModelForCausalLM.from_pretrained(base_decoder_model)
     dec_lora = add_lora_to_decoder(dec, enc_dec_model=False, **pre_trained_lora_configs_kwargs)
     m = VisionEncoderDecoderModel(encoder=enc, decoder=dec_lora)
-    st = load_file(os.path.join(pre_trained_ckpt_path, 'model.safetensors'))
-    st["decoder.base_model.model.lm_head.weight"] = st['decoder.base_model.model.model.decoder.embed_tokens.weight']
+    sft = 'model.safetensors'
+    pmb = 'pytorch_model.bin'
+    if sft in os.listdir(pre_trained_ckpt_path):
+        st_path = os.path.join(pre_trained_ckpt_path, sft)
+        st = load_file(st_path)
+    else:
+        st_path = os.path.join(pre_trained_ckpt_path, pmb)
+        st = torch.load(st_path, map_location='cpu')
+    
+    if "decoder.base_model.model.lm_head.weight" not in st.keys() or pre_trained_model_weights_tied:
+        st["decoder.base_model.model.lm_head.weight"] = st['decoder.base_model.model.model.decoder.embed_tokens.weight']
     m.load_state_dict(st, strict=True)
 
-    # image_processor = AutoImageProcessor.from_pretrained(base_encoder_model, use_fast=True)
     text_tokenizer = AutoTokenizer.from_pretrained(base_decoder_model, use_fast=True)
 
     if text_tokenizer.pad_token is None:
