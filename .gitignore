@@ -11,6 +11,7 @@ venv/
 wandb/
 checkpoint-*/
 *_final_model/
+saved_models/
 
 # files
 .env

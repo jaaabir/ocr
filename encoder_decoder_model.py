@@ -4,38 +4,73 @@ from transformers import (
     AutoModel, AutoModelForCausalLM, AutoTokenizer, 
     PerceptionLMForConditionalGeneration, PerceptionLMProcessor,
     AutoProcessor, AutoModelForImageTextToText, PreTrainedTokenizerFast )
-
+from safetensors.torch import load_file
 from tokenizers import Tokenizer, models, pre_tokenizers, processors, decoders, trainers
 
 from accelerate import load_checkpoint_and_dispatch
 
-from peft import LoraConfig, get_peft_model, TaskType
+from peft import LoraConfig, get_peft_model, TaskType, PeftModel
 
-def add_lora_to_decoder(encoder_decoder_model, r=8, alpha=16, dropout=0.1, target_modules=["q_proj", "v_proj", "k_proj", "out_proj"], bias="none", modules_to_save=None):
+
+def load_pretrained_enc_dec_model(pre_trained_ckpt_path, 
+                                  base_encoder_model="microsoft/dit-base-finetuned-rvlcdip", 
+                                  base_decoder_model="facebook/bart-base",
+                                  pre_trained_model_weights_tied=True,
+                                  **pre_trained_lora_configs_kwargs,
+                                  ):
+    
+    enc = AutoModel.from_pretrained(base_encoder_model)
+    dec = AutoModelForCausalLM.from_pretrained(base_decoder_model)
+    dec_lora = add_lora_to_decoder(dec, enc_dec_model=False, **pre_trained_lora_configs_kwargs)
+    m = VisionEncoderDecoderModel(encoder=enc, decoder=dec_lora)
+    st = load_file(os.path.join(pre_trained_ckpt_path, 'model.safetensors'))
+    st["decoder.base_model.model.lm_head.weight"] = st['decoder.base_model.model.model.decoder.embed_tokens.weight']
+    m.load_state_dict(st, strict=True)
+
+    # image_processor = AutoImageProcessor.from_pretrained(base_encoder_model, use_fast=True)
+    text_tokenizer = AutoTokenizer.from_pretrained(base_decoder_model, use_fast=True)
+
+    if text_tokenizer.pad_token is None:
+        text_tokenizer.pad_token = text_tokenizer.eos_token
+
+    m.config.decoder_start_token_id = text_tokenizer.bos_token_id
+    m.config.pad_token_id = text_tokenizer.pad_token_id
+    m.config.eos_token_id = text_tokenizer.eos_token_id
+    m.config.vocab_size = text_tokenizer.vocab_size
+    m.config.vocab_size = text_tokenizer.vocab_size
+    m.decoder.resize_token_embeddings(len(text_tokenizer))
+    m.generation_config.bos_token_id = text_tokenizer.bos_token_id
+    m.generation_config.eos_token_id = text_tokenizer.eos_token_id
+    m.generation_config.pad_token_id = text_tokenizer.pad_token_id
+
+    print('Loaded the pre-trained model successfully...')
+    return m 
+
+def add_lora_to_decoder(encoder_decoder_model, enc_dec_model=True, r=8, alpha=16, dropout=0.1, target_modules=["q_proj", "v_proj", "k_proj", "out_proj"], bias="none", modules_to_save=None, pre_trained_ckpt_path = None):
     """
     Wrap the decoder inside VisionEncoderDecoderModel with LoRA adapters.
     Fixed version that properly handles the decoder architecture.
     """
-    # Use CAUSAL_LM task type since we're only applying LoRA to the decoder
     lora_config = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,  # Changed from SEQ_2_SEQ_LM
-        r=r,                           # rank
-        lora_alpha=alpha,              # scaling
+        task_type=TaskType.CAUSAL_LM,  
+        r=r,                           
+        lora_alpha=alpha,             
         lora_dropout=dropout,
-        target_modules=target_modules, # Include more attention modules
+        target_modules=target_modules, 
         bias=bias,
-        # Add these parameters for better compatibility
-        modules_to_save=modules_to_save,          # Don't save additional modules
+        modules_to_save=modules_to_save,          
     )
     
-    # Apply LoRA **only** to the decoder
-    encoder_decoder_model.decoder = get_peft_model(
+    if enc_dec_model:
+        encoder_decoder_model.decoder = get_peft_model(
         encoder_decoder_model.decoder, lora_config
-    )
-    
-    print("LoRA applied to decoder:")
-    encoder_decoder_model.decoder.print_trainable_parameters()
-    
+        )
+        print("LoRA applied to decoder")
+    else:
+        encoder_decoder_model = get_peft_model(
+        encoder_decoder_model, lora_config
+        )
+        print("LoRA applied to the model")
     return encoder_decoder_model
 
 
@@ -120,14 +155,18 @@ def init_dit_mbert_models_fixed(
 def init_dit_bart_models_fixed(
     encoder_model="microsoft/dit-base-finetuned-rvlcdip",
     decoder_model="facebook/bart-base",
+    pre_trained_ckpt_path=None
 ):
     """
     Fixed version of DiT-BART initialization with proper cross-attention setup.
     """
-    encoder_decoder_model = VisionEncoderDecoderModel.from_encoder_decoder_pretrained(
+    if pre_trained_ckpt_path:
+        encoder_decoder_model = VisionEncoderDecoderModel.from_pretrained(pre_trained_ckpt_path)
+    else:    
+        encoder_decoder_model = VisionEncoderDecoderModel.from_encoder_decoder_pretrained(
         encoder_pretrained_model_name_or_path=encoder_model,
         decoder_pretrained_model_name_or_path=decoder_model,
-        decoder_forced_bos_token_id=None,  
+        decoder_forced_bos_token_id=None
     )
 
     image_processor = AutoImageProcessor.from_pretrained(encoder_model, use_fast=True)
