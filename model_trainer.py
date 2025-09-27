@@ -185,14 +185,16 @@ trainer = setup_dit_bart_training(
         callbacks=[early_stopping_callback]
     )
 
-save_model_path = 'saved_models'
-os.makedirs(save_model_path, exist_ok=True)
-model_save_path = f"{save_model_path}/{run_name}_final_model"
-try:
-    history = trainer.train()
-    trainer.save_model(model_save_path)
-except Exception as e:
-    print(e)
-    trainer.save_model(save_model_path)
+# save_model_path = 'saved_models'
+# os.makedirs(save_model_path, exist_ok=True)
+# model_save_path = f"{save_model_path}/{run_name}_final_model"
+# try:
+#     history = trainer.train()
+#     trainer.save_model(model_save_path)
+# except Exception as e:
+#     print(e)
+#     trainer.save_model(save_model_path)
+
+trainer.train()
 
 print('DONE')
