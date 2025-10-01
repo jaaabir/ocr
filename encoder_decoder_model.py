@@ -2,7 +2,7 @@ import torch
 from transformers import (
     VisionEncoderDecoderModel, AutoImageProcessor, T5ForConditionalGeneration, 
     AutoModel, AutoModelForCausalLM, AutoTokenizer, 
-    PerceptionLMForConditionalGeneration, PerceptionLMProcessor,
+    PerceptionLMForConditionalGeneration, PerceptionLMProcessor, MBartForCausalLM,
     AutoProcessor, AutoModelForImageTextToText, PreTrainedTokenizerFast )
 from safetensors.torch import load_file
 from tokenizers import Tokenizer, models, pre_tokenizers, processors, decoders, trainers
@@ -16,27 +16,36 @@ def load_pretrained_enc_dec_model(pre_trained_ckpt_path,
                                   base_encoder_model="microsoft/dit-base-finetuned-rvlcdip", 
                                   base_decoder_model="facebook/bart-base",
                                   pre_trained_model_weights_tied=True,
+                                  lora_applied=True,
+                                  new_tokens = [],
                                   **pre_trained_lora_configs_kwargs,
                                   ):
     
-    enc = AutoModel.from_pretrained(base_encoder_model)
-    dec = AutoModelForCausalLM.from_pretrained(base_decoder_model)
-    dec_lora = add_lora_to_decoder(dec, enc_dec_model=False, **pre_trained_lora_configs_kwargs)
-    m = VisionEncoderDecoderModel(encoder=enc, decoder=dec_lora)
-    sft = 'model.safetensors'
-    pmb = 'pytorch_model.bin'
-    if sft in os.listdir(pre_trained_ckpt_path):
-        st_path = os.path.join(pre_trained_ckpt_path, sft)
-        st = load_file(st_path)
+    if base_encoder_model and base_decoder_model:
+        enc = AutoModel.from_pretrained(base_encoder_model)
+        dec = AutoModelForCausalLM.from_pretrained(base_decoder_model)
+        if lora_applied:
+            dec = add_lora_to_decoder(dec, enc_dec_model=False, **pre_trained_lora_configs_kwargs)
+        m = VisionEncoderDecoderModel(encoder=enc, decoder=dec)  
+        sft = 'model.safetensors'
+        pmb = 'pytorch_model.bin'
+        if sft in os.listdir(pre_trained_ckpt_path):
+            st_path = os.path.join(pre_trained_ckpt_path, sft)
+            st = load_file(st_path)
+        else:
+            st_path = os.path.join(pre_trained_ckpt_path, pmb)
+            st = torch.load(st_path, map_location='cpu')
+        
+        if "decoder.base_model.model.lm_head.weight" not in st.keys() or pre_trained_model_weights_tied:
+            st["decoder.base_model.model.lm_head.weight"] = st['decoder.base_model.model.model.decoder.embed_tokens.weight']
+        m.load_state_dict(st, strict=True)
     else:
-        st_path = os.path.join(pre_trained_ckpt_path, pmb)
-        st = torch.load(st_path, map_location='cpu')
-    
-    if "decoder.base_model.model.lm_head.weight" not in st.keys() or pre_trained_model_weights_tied:
-        st["decoder.base_model.model.lm_head.weight"] = st['decoder.base_model.model.model.decoder.embed_tokens.weight']
-    m.load_state_dict(st, strict=True)
+        m = VisionEncoderDecoderModel.from_pretrained(pre_trained_ckpt_path)
 
     text_tokenizer = AutoTokenizer.from_pretrained(base_decoder_model, use_fast=True)
+
+    if len(new_tokens) > 0:
+        text_tokenizer.add_tokens(new_tokens)
 
     if text_tokenizer.pad_token is None:
         text_tokenizer.pad_token = text_tokenizer.eos_token
@@ -44,12 +53,14 @@ def load_pretrained_enc_dec_model(pre_trained_ckpt_path,
     m.config.decoder_start_token_id = text_tokenizer.bos_token_id
     m.config.pad_token_id = text_tokenizer.pad_token_id
     m.config.eos_token_id = text_tokenizer.eos_token_id
-    m.config.vocab_size = text_tokenizer.vocab_size
-    m.config.vocab_size = text_tokenizer.vocab_size
-    m.decoder.resize_token_embeddings(len(text_tokenizer))
+    tokenizer_total_leng = len(text_tokenizer)
+    m.config.vocab_size = tokenizer_total_leng
+    m.config.decoder.vocab_size = tokenizer_total_leng
+    m.decoder.resize_token_embeddings(tokenizer_total_leng)
     m.generation_config.bos_token_id = text_tokenizer.bos_token_id
     m.generation_config.eos_token_id = text_tokenizer.eos_token_id
     m.generation_config.pad_token_id = text_tokenizer.pad_token_id
+    m.generation_config.decoder_start_token_id = text_tokenizer.bos_token_id
 
     print('Loaded the pre-trained model successfully...')
     return m 
@@ -104,26 +115,40 @@ def add_lora_to_encoder_decoder(encoder_decoder_model, r=8, alpha=16, dropout=0.
     
     return encoder_decoder_model
 
+def print_model_layer_sizes(model):
+    for name, param in model.named_parameters():
+        print(f"{name}: {param.numel()} parameters | {param.shape}")
 
-def init_dit_gpt_models(encoder_model="microsoft/dit-base-finetuned-rvlcdip", decoder_model="google/t5-v1_1-base"):
-
-    # Initialize the VisionEncoderDecoderModel
-    encoder_decoder_model = VisionEncoderDecoderModel.from_encoder_decoder_pretrained(
-        encoder_pretrained_model_name_or_path=encoder_model,
-        decoder_pretrained_model_name_or_path=decoder_model,
-    )
-
-    # Initialize the image processor for the DiT encoder
+def init_dit_dbart_models(encoder_model="microsoft/dit-large-finetuned-rvlcdip", 
+                          decoder_model="naver-clova-ix/donut-base", 
+                          load_model=True):
+    
     image_processor = AutoImageProcessor.from_pretrained(encoder_model, use_fast=True)
-
-    # Load the fast tokenizer for GPT-2
     text_tokenizer = AutoTokenizer.from_pretrained(decoder_model, use_fast=True)
+    text_tokenizer.add_tokens(['Ã', 'Ê', 'Â'])
 
-    # GPT-2 does not have pad_token by default, so we need to set it
     if text_tokenizer.pad_token is None:
         text_tokenizer.pad_token = text_tokenizer.eos_token
 
-    return image_processor, text_tokenizer, encoder_decoder_model
+    if load_model:
+        dit = AutoModel.from_pretrained(encoder_model)
+        dbart = VisionEncoderDecoderModel.from_pretrained(decoder_model).decoder
+        dbart.resize_token_embeddings(len(text_tokenizer))
+        dbart.config.vocab_size = len(text_tokenizer)
+        model = VisionEncoderDecoderModel(encoder=dit, decoder=dbart)
+        model.config.decoder_start_token_id = text_tokenizer.bos_token_id
+        model.config.pad_token_id = text_tokenizer.pad_token_id
+        model.config.eos_token_id = text_tokenizer.eos_token_id
+        model.config.vocab_size = len(text_tokenizer)
+        
+        model.generation_config.bos_token_id = text_tokenizer.bos_token_id
+        model.generation_config.eos_token_id = text_tokenizer.eos_token_id
+        model.generation_config.pad_token_id = text_tokenizer.pad_token_id
+        model.generation_config.decoder_start_token_id = text_tokenizer.bos_token_id
+
+        return image_processor, text_tokenizer, model
+    return image_processor, text_tokenizer
+
 
 def init_dit_mbert_models_fixed(
     encoder_model="microsoft/dit-base-finetuned-rvlcdip",
@@ -163,19 +188,19 @@ def init_dit_mbert_models_fixed(
 def init_dit_bart_models_fixed(
     encoder_model="microsoft/dit-base-finetuned-rvlcdip",
     decoder_model="facebook/bart-base",
-    pre_trained_ckpt_path=None
+    load_model=True
 ):
     """
     Fixed version of DiT-BART initialization with proper cross-attention setup.
     """
-    if pre_trained_ckpt_path:
-        encoder_decoder_model = VisionEncoderDecoderModel.from_pretrained(pre_trained_ckpt_path)
-    else:    
+    
+    if load_model:   
         encoder_decoder_model = VisionEncoderDecoderModel.from_encoder_decoder_pretrained(
-        encoder_pretrained_model_name_or_path=encoder_model,
-        decoder_pretrained_model_name_or_path=decoder_model,
-        decoder_forced_bos_token_id=None
-    )
+            encoder_pretrained_model_name_or_path=encoder_model,
+            decoder_pretrained_model_name_or_path=decoder_model,
+            decoder_forced_bos_token_id=None
+            )
+    
 
     image_processor = AutoImageProcessor.from_pretrained(encoder_model, use_fast=True)
     text_tokenizer = AutoTokenizer.from_pretrained(decoder_model, use_fast=True)
@@ -183,32 +208,19 @@ def init_dit_bart_models_fixed(
     if text_tokenizer.pad_token is None:
         text_tokenizer.pad_token = text_tokenizer.eos_token
 
-    encoder_decoder_model.config.decoder_start_token_id = text_tokenizer.bos_token_id
-    encoder_decoder_model.config.pad_token_id = text_tokenizer.pad_token_id
-    encoder_decoder_model.config.eos_token_id = text_tokenizer.eos_token_id
-    encoder_decoder_model.config.vocab_size = text_tokenizer.vocab_size
-    
-    # encoder_decoder_model.config.use_cache = False  
-    # encoder_decoder_model.config.is_encoder_decoder = True
-    # encoder_decoder_model.add_cross_attention = True
-    # encoder_decoder_model.config.max_length = 512
-    # encoder_decoder_model.config.min_length = 1
-    # encoder_decoder_model.config.no_repeat_ngram_size = 2
-    # encoder_decoder_model.config.early_stopping = True
-    # encoder_decoder_model.config.length_penalty = 1.5
-    # encoder_decoder_model.config.num_beams = 3
-    # encoder_decoder_model.config.repetition_penalty = 1.3
-    # encoder_decoder_model.config.do_sample = False  
-    # encoder_decoder_model.config.tie_word_embeddings = True
-    
-    encoder_decoder_model.config.vocab_size = text_tokenizer.vocab_size
-    encoder_decoder_model.decoder.resize_token_embeddings(len(text_tokenizer))
+    if load_model:
+        encoder_decoder_model.config.decoder_start_token_id = text_tokenizer.bos_token_id
+        encoder_decoder_model.config.pad_token_id = text_tokenizer.pad_token_id
+        encoder_decoder_model.config.eos_token_id = text_tokenizer.eos_token_id
+        encoder_decoder_model.config.vocab_size = text_tokenizer.vocab_size
+        encoder_decoder_model.config.vocab_size = text_tokenizer.vocab_size
+        encoder_decoder_model.decoder.resize_token_embeddings(len(text_tokenizer))
+        encoder_decoder_model.generation_config.bos_token_id = text_tokenizer.bos_token_id
+        encoder_decoder_model.generation_config.eos_token_id = text_tokenizer.eos_token_id
+        encoder_decoder_model.generation_config.pad_token_id = text_tokenizer.pad_token_id
 
-    encoder_decoder_model.generation_config.bos_token_id = text_tokenizer.bos_token_id
-    encoder_decoder_model.generation_config.eos_token_id = text_tokenizer.eos_token_id
-    encoder_decoder_model.generation_config.pad_token_id = text_tokenizer.pad_token_id
-
-    return image_processor, text_tokenizer, encoder_decoder_model
+        return image_processor, text_tokenizer, encoder_decoder_model
+    return image_processor, text_tokenizer
 
 
 def init_dit_t5_models_fixed(

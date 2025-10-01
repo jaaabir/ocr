@@ -32,6 +32,7 @@ def improved_collate_fn(batch, text_tokenizer, max_length=512):
                 label = torch.cat([label, eos_tensor])
             
             labels.append(label)
+            # print(label)
         else:
             raise ValueError("Missing 'labels' in batch item")
 
@@ -41,9 +42,13 @@ def improved_collate_fn(batch, text_tokenizer, max_length=512):
             if attn_mask.shape[0] > max_length:
                 attn_mask = attn_mask[:max_length]
             attn_masks.append(attn_mask)
+            # print(attn_mask)
         else:
             # if not provided, make a mask of ones
             attn_masks.append(torch.ones_like(label, dtype=torch.long))
+
+        # print(f'Max token size: {max_length}')
+        
     
     # --- Stack pixel values ---
     pixel_values = torch.stack(pixel_values)
@@ -58,12 +63,13 @@ def improved_collate_fn(batch, text_tokenizer, max_length=512):
     labels = labels.clone()
     labels[labels == text_tokenizer.pad_token_id] = -100
     
-    return {
+    res =  {
         'pixel_values': pixel_values,
         'labels': labels,
-        # 'decoder_input_ids': None,
         'decoder_attention_mask': attn_masks
     }
+
+    return res
 
 
 def get_immediate_repetition_ratio(decoded_preds):
@@ -81,27 +87,30 @@ def get_immediate_repetition_ratio(decoded_preds):
 from collections import Counter
 
 def pred_intersect_labels(preds, labels):
-    scores = []
-    
+    if not preds:
+        return 0.0
+
+    total_score = 0.0
+    n = len(preds)
+
     for pred, label in zip(preds, labels):
-        pred_count = Counter(pred.split())
-        label_count = Counter(label.split())
-        
-        # Multiset intersection (min of counts for each word)
-        common = pred_count & label_count
-        
-        overlap = sum(common.values())
-        total = sum(pred_count.values())
-        
-        score = overlap / total if total > 0 else 0
-        scores.append(score)
-    
-    # Average over all samples
-    return sum(scores) / len(scores) if scores else 0
+        pred_set = set(pred.split())
+        label_set = set(label.split())
+
+        if not pred_set:
+            continue
+
+        overlap = len(pred_set & label_set)
+        score = overlap / len(pred_set)
+        total_score += score
+
+    return total_score / n
+
+
+bleu = evaluate.load("bleu")
 
 def compute_bleu(decoded_preds, decoded_labels):
     try:
-        bleu = evaluate.load("bleu")
         bleu_score = bleu.compute(predictions=decoded_preds, references=[[label] for label in decoded_labels])
         bleu_value = bleu_score["bleu"]
     except:
@@ -115,6 +124,9 @@ def compute_metrics_ocr(eval_pred, tokenizer):
     predictions, labels = eval_pred
     
     # Decode predictions and labels
+
+    print('Evaluating ...')
+
     predictions = np.where(predictions != -100, predictions, tokenizer.pad_token_id)
     decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
     
@@ -125,16 +137,22 @@ def compute_metrics_ocr(eval_pred, tokenizer):
     # Clean up texts
     decoded_preds = [pred.strip() for pred in decoded_preds]
     decoded_labels = [label.strip() for label in decoded_labels]
+
+    print(decoded_labels)
+    print(decoded_preds)
     
     # Calculate BLEU score
     bleu_value = compute_bleu(decoded_preds, decoded_labels)
     pred_words_in_labels = pred_intersect_labels(decoded_preds, decoded_labels)
     
     
-    return {
+    metrics =  {
         "bleu": bleu_value,
         "pred_intersect_labels": pred_words_in_labels
     }
+
+    print(metrics)
+    return metrics
 
 def test_model_before_training(model, image_processor, text_tokenizer, sample_image):
     """
@@ -179,7 +197,7 @@ def test_model_before_training(model, image_processor, text_tokenizer, sample_im
     
 # Better training arguments
 def setup_dit_bart_training(train_dataset, val_dataset, training_args=None, run_name="model_run", 
-                            model=None, text_tokenizer=None, callbacks=[]):
+                            model=None, text_tokenizer=None, callbacks=[], max_length = 512):
     """
     Complete setup for DiT-BART training.
     """
@@ -189,7 +207,7 @@ def setup_dit_bart_training(train_dataset, val_dataset, training_args=None, run_
     
     # Create collate function
     def collate_fn(batch):
-        return improved_collate_fn(batch, text_tokenizer)
+        return improved_collate_fn(batch, text_tokenizer, max_length = max_length)
     
     # Create compute metrics function
     def compute_metrics(eval_pred):

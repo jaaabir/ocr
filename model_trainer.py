@@ -10,7 +10,10 @@ import os
 import torch 
 from torch.utils.data import DataLoader
 from func_utils.pydataloader import SynthDogDataset
-from encoder_decoder_model import init_dit_bart_models_fixed, add_lora_to_decoder, add_lora_to_encoder_decoder, load_pretrained_enc_dec_model
+from encoder_decoder_model import (
+    init_dit_bart_models_fixed, add_lora_to_decoder, 
+    load_pretrained_enc_dec_model, init_dit_dbart_models
+)
 
 
 import evaluate 
@@ -47,14 +50,21 @@ Choose the root path:
 root_path = root_path1 if root_choice_ind == 1 else root_path2
 train_image_path, train_json_metadata = get_synth_images_json_path(data_root=root_path, split='train')
 val_image_path, val_json_metadata = get_synth_images_json_path(data_root=root_path, split='validation')
-test_image_path, test_json_metadata = get_synth_images_json_path(data_root=root_path, split='test')
-processor, text_tokenizer, _ = init_dit_bart_models_fixed()
-# model.gradient_checkpointing_enable()
+
+base_model_choice_ind = int(input(f"""
+Choose the base model arch:
+[1] - DiT + Bart
+[2] - DiT + Donut-MBart
+"""))
+if base_model_choice_ind == 1:
+    processor, text_tokenizer = init_dit_bart_models_fixed(load_model=False)
+else:
+    processor, text_tokenizer = init_dit_dbart_models(load_model=False)
 
 peak_mem = torch.cuda.max_memory_allocated()
 print(f"The model as is is holding: {peak_mem / 1024**3:.2f} of GPU RAM")
 
-max_token_size = 512
+max_token_size = 1056
 sample_size = int(input('sample size: '))
 fetch_from_supabase = False
 train_synthdataset = SynthDogDataset(image_path=train_image_path,output_jsons_path=train_json_metadata, image_feature_extractor=processor, 
@@ -63,12 +73,9 @@ train_synthdataset = SynthDogDataset(image_path=train_image_path,output_jsons_pa
 val_sample_size = int(input('Validation sample size: ')) 
 val_synthdataset = SynthDogDataset(image_path=val_image_path,output_jsons_path=val_json_metadata, image_feature_extractor=processor, 
                                    text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=val_sample_size, 
-                                   read_images_from_supabase=fetch_from_supabase, split='validation')
-test_synthdataset = SynthDogDataset(image_path=test_image_path,output_jsons_path=test_json_metadata, image_feature_extractor=processor, 
-                                    text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=val_sample_size, 
-                                    read_images_from_supabase=fetch_from_supabase, split='test') 
+                                   read_images_from_supabase=fetch_from_supabase, split='validation') 
 
-model_config_version = 'v7'
+model_config_version = 'v8'
 run_name = input('Run name: ')
 checkpoint_name = input('Checkpoint name: ')
 
@@ -82,14 +89,6 @@ batch_size = int(input('Batch size: '))
 run_name = run_name + f"_{sample_size if sample_size > 0 else 'all'}_samples_{model_config_version}"
     
 wandb.init(project="ocr model", name=run_name)
-
-r=32
-alpha=r*2
-dropout=0.35
-target_modules = [
-        "q_proj", "k_proj", "v_proj", "out_proj"
-]
-modules_to_save = None
 
 lr = float(input('Learning rate: ')) # recommended : 1e-4, 5e-5 >=. 
 
@@ -107,6 +106,7 @@ print(f'Eval steps & Save steps: {eval_steps}')
 ckpt_path = 'checkpoints'
 os.makedirs(ckpt_path, exist_ok=True)
 max_grad_norm = float(input('Max Grad Norm: ')) # recommended : 10
+num_beams = 1
 training_args = Seq2SeqTrainingArguments(
         output_dir=f"./{ckpt_path}/{checkpoint_name}",
         per_device_train_batch_size=batch_size,
@@ -116,7 +116,7 @@ training_args = Seq2SeqTrainingArguments(
         optim='adamw_torch',
         lr_scheduler_type="cosine",
         num_train_epochs=num_epochs,
-        warmup_ratio=0.1,  
+        warmup_ratio=0.05,  
         logging_steps=50,
         logging_strategy="steps",
         save_total_limit=3,
@@ -126,8 +126,8 @@ training_args = Seq2SeqTrainingArguments(
         weight_decay=0.01,
         dataloader_pin_memory=False,
         predict_with_generate=True,
-        generation_max_length=512,
-        generation_num_beams=6,
+        generation_max_length=max_token_size,
+        generation_num_beams=num_beams,
         report_to=["wandb"],
         run_name=run_name,
         save_safetensors=True,
@@ -147,15 +147,37 @@ Load model type:
 >>> 
 """))
 
+r=32
+alpha=r*2
+dropout=0.35
+target_modules = [
+        "q_proj", "k_proj", "v_proj", "out_proj"
+]
+modules_to_save = None
+
 if load_model_choice == 1:
-    _, _, ovmodel = init_dit_bart_models_fixed()
-    ovmodel = add_lora_to_decoder(ovmodel, r=r, alpha=alpha, dropout=dropout, target_modules=target_modules, modules_to_save=modules_to_save)
+    if base_model_choice_ind == 1:
+        _, _, ovmodel = init_dit_bart_models_fixed()
+        ovmodel = add_lora_to_decoder(ovmodel, r=r, alpha=alpha, dropout=dropout, target_modules=target_modules, modules_to_save=modules_to_save)
+    else:
+        _, _, ovmodel = init_dit_dbart_models()
 else:
     ckpt_path = input('Relative ckpt path: ')
-    ovmodel = load_pretrained_enc_dec_model(ckpt_path, r=r, alpha=alpha, dropout=dropout, target_modules=target_modules, modules_to_save=modules_to_save)
+    if base_model_choice_ind == 1:
+        ovmodel = load_pretrained_enc_dec_model(ckpt_path, r=r, alpha=alpha, dropout=dropout, 
+                                                target_modules=target_modules, modules_to_save=modules_to_save)
+    else:
+        decoder = "naver-clova-ix/donut-base"
+        ovmodel = load_pretrained_enc_dec_model(ckpt_path, base_encoder_model=None, 
+                                             base_decoder_model="naver-clova-ix/donut-base", 
+                                             lora_applied=False, 
+                                             new_tokens=['Ã', 'Ê', 'Â']
+                                            )
 
-ovmodel = unfreeze_all_params(ovmodel, unfreeze_encoder=False, unfreeze_decoder=True)
-ovmodel = unfreeze_last_n_encoder(ovmodel, unfreeze_last_n_layer_block=1, unfreeze_attention_layers=True, skip_encoder=True, skip_decoder=True)
+if model_config_version == 'v7':
+    ovmodel = unfreeze_all_params(ovmodel, unfreeze_encoder=False, unfreeze_decoder=True)
+    ovmodel = unfreeze_last_n_encoder(ovmodel, unfreeze_last_n_layer_block=1, unfreeze_attention_layers=True, skip_encoder=True, skip_decoder=True)
+
 ovmodel.add_cross_attention = True
 ovmodel.config.max_length = max_token_size
 ovmodel.config.decoder.max_length = max_token_size
@@ -164,8 +186,7 @@ ovmodel.config.decoder.min_length = 1
 ovmodel.config.no_repeat_ngram_size = 0
 ovmodel.config.repetition_penalty = 1.5
 ovmodel.config.length_penalty = 1.0 
-ovmodel.config.early_stopping = True
-ovmodel.config.num_beams = 6
+ovmodel.config.num_beams = num_beams
 ovmodel.config.use_cache = False  
 ovmodel.config.is_encoder_decoder = True
 ovmodel.config.do_sample = False  
@@ -173,16 +194,22 @@ ovmodel.config.tie_word_embeddings = True
 ovmodel.config.decoder.dropout = dropout
 ovmodel.config.decoder.attention_dropout = 0.15
 ovmodel.config.decoder.decoder_layerdrop = 0.1
-# print_trainable_prams(ovmodel)
+if num_beams > 1:
+    ovmodel.config.early_stopping = True
+
+if model_config_version == 'v8':
+    print_trainable_prams(ovmodel)
 
 early_stop = int(input('Early stopping: '))
 early_stopping_callback = EarlyStoppingCallback(
-    early_stopping_patience=15
+    early_stopping_patience=early_stop
 )
 trainer = setup_dit_bart_training(
-        train_synthdataset, val_synthdataset, training_args=training_args, model=ovmodel, text_tokenizer=text_tokenizer,
+        train_synthdataset, val_synthdataset, training_args=training_args, model=ovmodel, 
+        text_tokenizer=text_tokenizer,
         run_name = run_name, 
-        callbacks=[early_stopping_callback]
+        callbacks=[early_stopping_callback],
+        max_length=max_token_size
     )
 
 # save_model_path = 'saved_models'

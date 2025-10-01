@@ -283,9 +283,12 @@ class SynthDogDataset(Dataset):
 
         if self.text_tokenizer:
             image_features = self.image_feature_extractor(image, return_tensors="pt").pixel_values.squeeze(0)
-            tokenizer_op = self.text_tokenizer(target_text, truncation=False, padding="do_not_pad", return_tensors="pt")
-            attention_mask = tokenizer_op['attention_mask'].squeeze(0)
-            output_tokens = tokenizer_op['input_ids'].squeeze(0)
+            tokenizer_op = self.text_tokenizer(target_text)
+            attention_mask = torch.tensor(tokenizer_op['attention_mask'])
+            output_tokens = tokenizer_op['input_ids']
+            if output_tokens[0] != self.text_tokenizer.bos_token_id:
+                output_tokens[0] = self.text_tokenizer.bos_token_id
+            output_tokens = torch.tensor(output_tokens)
         else:
             proc_outputs = self.image_feature_extractor(
                 images=image,
