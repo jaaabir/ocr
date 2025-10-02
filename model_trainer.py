@@ -215,7 +215,7 @@ peak_mem = torch.cuda.max_memory_allocated()
 print(f"The model is holding: {peak_mem / 1024**3:.2f} of GPU RAM")
 
 print()
-ovmodel.gradient_checkpointing_enable()
+# ovmodel.gradient_checkpointing_enable()
 
 trainer = setup_dit_bart_training(
         train_synthdataset, val_synthdataset, training_args=training_args, model=ovmodel, 
