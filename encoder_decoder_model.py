@@ -82,6 +82,7 @@ def load_pretrained_enc_dec_model(pre_trained_ckpt_path,
                                   pre_trained_model_weights_tied=True,
                                   lora_applied=True,
                                   new_tokens = [],
+                                  device_map = 'cuda',
                                   **pre_trained_lora_configs_kwargs,
                                   ):
     
@@ -104,7 +105,7 @@ def load_pretrained_enc_dec_model(pre_trained_ckpt_path,
             st["decoder.base_model.model.lm_head.weight"] = st['decoder.base_model.model.model.decoder.embed_tokens.weight']
         m.load_state_dict(st, strict=True)
     else:
-        m = VisionEncoderDecoderModel.from_pretrained(pre_trained_ckpt_path)
+        m = VisionEncoderDecoderModel.from_pretrained(pre_trained_ckpt_path, device_map=device_map)
 
     files = os.listdir(pre_trained_ckpt_path)
     if 'tokenizer_config.json' in files and 'tokenizer.json' in files:

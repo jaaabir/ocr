@@ -25,6 +25,7 @@ import gc
 
 from func_utils.trainer_utils import *
 
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 torch.cuda.empty_cache()
 gc.collect()
 wandb.login()
@@ -64,9 +65,6 @@ elif base_model_choice_ind == 2:
 else:
     processor, text_tokenizer = load_pretrained_iprocessor_tokenizer('saved_models/dit768_dbart/')
 
-peak_mem = torch.cuda.max_memory_allocated()
-print(f"The model as is is holding: {peak_mem / 1024**3:.2f} of GPU RAM")
-
 max_token_size = 1056
 sample_size = int(input('sample size: '))
 fetch_from_supabase = False
@@ -97,7 +95,7 @@ lr = float(input('Learning rate: ')) # recommended : 1e-4, 5e-5 >=.
 
 num_epochs = int(input('Number of epochs : '))
 eval_steps = 100
-grad_accumulation = 1
+grad_accumulation = 2 if base_model_choice_ind == 3 else 1
 steps_per_epoch = len(train_synthdataset)/(batch_size*1*grad_accumulation)
 total_training_steps = int(steps_per_epoch * num_epochs)
 if total_training_steps > 25000:
@@ -165,7 +163,7 @@ if load_model_choice == 1:
     elif base_model_choice_ind == 2:
         _, _, ovmodel = init_dit_dbart_models()
     else:
-        ovmodel = load_pretrained_enc_dec_model('saved_models/dit768_dbart/', None, None, lora_applied=False)
+        ovmodel = load_pretrained_enc_dec_model('saved_models/dit768_dbart/', None, None, lora_applied=False, device_map='cuda')
 else:
     ckpt_path = input('Relative ckpt path: ')
     if base_model_choice_ind == 1:
@@ -179,7 +177,7 @@ else:
                                              new_tokens=['Ã', 'Ê', 'Â']
                                             )
     else:
-        ovmodel = load_pretrained_enc_dec_model(ckpt_path, None, None, lora_applied=False)
+        ovmodel = load_pretrained_enc_dec_model(ckpt_path, None, None, lora_applied=False, device_map='cuda')
 
 if model_config_version == 'v7':
     ovmodel = unfreeze_all_params(ovmodel, unfreeze_encoder=False, unfreeze_decoder=True)
@@ -211,6 +209,14 @@ early_stop = int(input('Early stopping: '))
 early_stopping_callback = EarlyStoppingCallback(
     early_stopping_patience=early_stop
 )
+
+# ovmodel.gradient_checkpointing()
+peak_mem = torch.cuda.max_memory_allocated()
+print(f"The model is holding: {peak_mem / 1024**3:.2f} of GPU RAM")
+
+print()
+ovmodel.gradient_checkpointing_enable()
+
 trainer = setup_dit_bart_training(
         train_synthdataset, val_synthdataset, training_args=training_args, model=ovmodel, 
         text_tokenizer=text_tokenizer,

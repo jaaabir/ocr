@@ -138,7 +138,10 @@ def compute_metrics_ocr(eval_pred, tokenizer):
     decoded_preds = [pred.strip() for pred in decoded_preds]
     decoded_labels = [label.strip() for label in decoded_labels]
 
+    print('GT')
     print(decoded_labels[0])
+    print()
+    print('Pred')
     print(decoded_preds[0])
     
     # Calculate BLEU score
