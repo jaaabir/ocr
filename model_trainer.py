@@ -95,7 +95,7 @@ lr = float(input('Learning rate: ')) # recommended : 1e-4, 5e-5 >=.
 
 num_epochs = int(input('Number of epochs : '))
 eval_steps = 100
-grad_accumulation = 2 if base_model_choice_ind == 3 else 1
+grad_accumulation = 4 if base_model_choice_ind == 3 else 1
 steps_per_epoch = len(train_synthdataset)/(batch_size*1*grad_accumulation)
 total_training_steps = int(steps_per_epoch * num_epochs)
 if total_training_steps > 25000:
