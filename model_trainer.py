@@ -163,7 +163,7 @@ if load_model_choice == 1:
     elif base_model_choice_ind == 2:
         _, _, ovmodel = init_dit_dbart_models()
     else:
-        ovmodel = load_pretrained_enc_dec_model('saved_models/dit768_dbart/', None, None, lora_applied=False, device_map='cuda')
+        ovmodel = load_pretrained_enc_dec_model('saved_models/dit768_dbart/', None, None, lora_applied=False, device_map='auto')
 else:
     ckpt_path = input('Relative ckpt path: ')
     if base_model_choice_ind == 1:
@@ -177,7 +177,7 @@ else:
                                              new_tokens=['Ã', 'Ê', 'Â']
                                             )
     else:
-        ovmodel = load_pretrained_enc_dec_model(ckpt_path, None, None, lora_applied=False, device_map='cuda')
+        ovmodel = load_pretrained_enc_dec_model(ckpt_path, None, None, lora_applied=False, device_map='auto')
 
 if model_config_version == 'v7':
     ovmodel = unfreeze_all_params(ovmodel, unfreeze_encoder=False, unfreeze_decoder=True)
