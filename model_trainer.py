@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from func_utils.pydataloader import SynthDogDataset
 from encoder_decoder_model import (
     init_dit_bart_models_fixed, add_lora_to_decoder, 
-    load_pretrained_enc_dec_model, init_dit_dbart_models
+    load_pretrained_enc_dec_model, init_dit_dbart_models, load_pretrained_iprocessor_tokenizer
 )
 
 
@@ -55,11 +55,14 @@ base_model_choice_ind = int(input(f"""
 Choose the base model arch:
 [1] - DiT + Bart
 [2] - DiT + Donut-MBart
+[3] - Dit768 + Donut-MBart
 """))
 if base_model_choice_ind == 1:
     processor, text_tokenizer = init_dit_bart_models_fixed(load_model=False)
-else:
+elif base_model_choice_ind == 2:
     processor, text_tokenizer = init_dit_dbart_models(load_model=False)
+else:
+    processor, text_tokenizer = load_pretrained_iprocessor_tokenizer('saved_models/dit768_dbart/')
 
 peak_mem = torch.cuda.max_memory_allocated()
 print(f"The model as is is holding: {peak_mem / 1024**3:.2f} of GPU RAM")
@@ -120,7 +123,7 @@ training_args = Seq2SeqTrainingArguments(
         logging_steps=50,
         logging_strategy="steps",
         save_total_limit=3,
-        fp16=False,
+        fp16=True,
         max_grad_norm=max_grad_norm,  
         
         weight_decay=0.01,
@@ -159,20 +162,24 @@ if load_model_choice == 1:
     if base_model_choice_ind == 1:
         _, _, ovmodel = init_dit_bart_models_fixed()
         ovmodel = add_lora_to_decoder(ovmodel, r=r, alpha=alpha, dropout=dropout, target_modules=target_modules, modules_to_save=modules_to_save)
-    else:
+    elif base_model_choice_ind == 2:
         _, _, ovmodel = init_dit_dbart_models()
+    else:
+        ovmodel = load_pretrained_enc_dec_model('saved_models/dit768_dbart/', None, None, lora_applied=False)
 else:
     ckpt_path = input('Relative ckpt path: ')
     if base_model_choice_ind == 1:
         ovmodel = load_pretrained_enc_dec_model(ckpt_path, r=r, alpha=alpha, dropout=dropout, 
                                                 target_modules=target_modules, modules_to_save=modules_to_save)
-    else:
+    elif base_model_choice_ind == 2:
         decoder = "naver-clova-ix/donut-base"
         ovmodel = load_pretrained_enc_dec_model(ckpt_path, base_encoder_model=None, 
                                              base_decoder_model="naver-clova-ix/donut-base", 
                                              lora_applied=False, 
                                              new_tokens=['Ã', 'Ê', 'Â']
                                             )
+    else:
+        ovmodel = load_pretrained_enc_dec_model(ckpt_path, None, None, lora_applied=False)
 
 if model_config_version == 'v7':
     ovmodel = unfreeze_all_params(ovmodel, unfreeze_encoder=False, unfreeze_decoder=True)

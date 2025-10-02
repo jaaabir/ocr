@@ -138,8 +138,8 @@ def compute_metrics_ocr(eval_pred, tokenizer):
     decoded_preds = [pred.strip() for pred in decoded_preds]
     decoded_labels = [label.strip() for label in decoded_labels]
 
-    print(decoded_labels)
-    print(decoded_preds)
+    print(decoded_labels[0])
+    print(decoded_preds[0])
     
     # Calculate BLEU score
     bleu_value = compute_bleu(decoded_preds, decoded_labels)
@@ -151,7 +151,6 @@ def compute_metrics_ocr(eval_pred, tokenizer):
         "pred_intersect_labels": pred_words_in_labels
     }
 
-    print(metrics)
     return metrics
 
 def test_model_before_training(model, image_processor, text_tokenizer, sample_image):

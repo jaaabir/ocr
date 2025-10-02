@@ -8,8 +8,72 @@ from safetensors.torch import load_file
 from tokenizers import Tokenizer, models, pre_tokenizers, processors, decoders, trainers
 
 from accelerate import load_checkpoint_and_dispatch
+import os 
+from peft import LoraConfig, get_peft_model, TaskType
 
-from peft import LoraConfig, get_peft_model, TaskType, PeftModel
+import torch.nn.functional as F
+
+def resize_position_embeddings(model, old_size=224, new_size=768, patch_size=16):
+    """
+    Resize position embeddings for DiT model to handle larger images.
+    
+    Args:
+        model: The DiT model
+        old_size: Original image size (224)
+        new_size: Target image size (768)
+        patch_size: Patch size (16)
+    """
+    # Calculate number of patches
+    old_num_patches = (old_size // patch_size) ** 2  # 196
+    new_num_patches = (new_size // patch_size) ** 2  # 2304
+    
+    print(f"Old patches: {old_num_patches}, New patches: {new_num_patches}")
+    
+    # Get current position embeddings [1, 197, 1024] (196 patches + 1 CLS token)
+    old_pos_embed = model.embeddings.position_embeddings.data
+    
+    # Separate CLS token embedding and patch embeddings
+    cls_pos_embed = old_pos_embed[:, 0:1, :]  # [1, 1, 1024]
+    patch_pos_embed = old_pos_embed[:, 1:, :]  # [1, 196, 1024]
+    
+    # Reshape patch embeddings to 2D grid
+    old_grid_size = int(old_num_patches ** 0.5)  # 14
+    new_grid_size = int(new_num_patches ** 0.5)  # 48
+    embed_dim = patch_pos_embed.shape[-1]  # 1024
+    
+    # Reshape to [1, 1024, 14, 14]
+    patch_pos_embed = patch_pos_embed.reshape(1, old_grid_size, old_grid_size, embed_dim)
+    patch_pos_embed = patch_pos_embed.permute(0, 3, 1, 2)
+    
+    # Interpolate to new size [1, 1024, 48, 48]
+    patch_pos_embed = F.interpolate(
+        patch_pos_embed,
+        size=(new_grid_size, new_grid_size),
+        mode='bicubic',
+        align_corners=False
+    )
+    
+    # Reshape back to [1, 2304, 1024]
+    patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1)
+    patch_pos_embed = patch_pos_embed.reshape(1, new_num_patches, embed_dim)
+    
+    # Concatenate CLS token and patch embeddings
+    new_pos_embed = torch.cat([cls_pos_embed, patch_pos_embed], dim=1)  # [1, 2305, 1024]
+    
+    print(f"Original position embeddings shape: {old_pos_embed.shape}")
+    print(f"New position embeddings shape: {new_pos_embed.shape}")
+    
+    # Create new embedding layer with correct size
+    new_embeddings = torch.nn.Parameter(new_pos_embed)
+    model.embeddings.position_embeddings = new_embeddings
+    
+    return model
+
+
+def load_pretrained_iprocessor_tokenizer(pre_trained_ckpt_path):
+    processor = AutoImageProcessor.from_pretrained(pre_trained_ckpt_path, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(pre_trained_ckpt_path, use_fast=True)
+    return processor, tokenizer
 
 
 def load_pretrained_enc_dec_model(pre_trained_ckpt_path, 
@@ -42,7 +106,12 @@ def load_pretrained_enc_dec_model(pre_trained_ckpt_path,
     else:
         m = VisionEncoderDecoderModel.from_pretrained(pre_trained_ckpt_path)
 
-    text_tokenizer = AutoTokenizer.from_pretrained(base_decoder_model, use_fast=True)
+    files = os.listdir(pre_trained_ckpt_path)
+    if 'tokenizer_config.json' in files and 'tokenizer.json' in files:
+        print('loading pre-trained tokenizer')
+        text_tokenizer = AutoTokenizer.from_pretrained(pre_trained_ckpt_path, use_fast=True)
+    else:
+        text_tokenizer = AutoTokenizer.from_pretrained(base_decoder_model, use_fast=True)
 
     if len(new_tokens) > 0:
         text_tokenizer.add_tokens(new_tokens)
@@ -54,9 +123,15 @@ def load_pretrained_enc_dec_model(pre_trained_ckpt_path,
     m.config.pad_token_id = text_tokenizer.pad_token_id
     m.config.eos_token_id = text_tokenizer.eos_token_id
     tokenizer_total_leng = len(text_tokenizer)
-    m.config.vocab_size = tokenizer_total_leng
-    m.config.decoder.vocab_size = tokenizer_total_leng
-    m.decoder.resize_token_embeddings(tokenizer_total_leng)
+    
+    if hasattr(m.config, 'vocab_size') and m.config.vocab_size != tokenizer_total_leng:
+        print('config vocab size is not equal to tokenizer leng. changing the configs ...')
+        m.config.vocab_size = tokenizer_total_leng
+    if m.config.decoder.vocab_size != tokenizer_total_leng:
+        print('decoder config vocab size is not equal to tokenizer leng. changing the configs ...')
+        m.config.decoder.vocab_size = tokenizer_total_leng
+        m.decoder.resize_token_embeddings(tokenizer_total_leng)
+
     m.generation_config.bos_token_id = text_tokenizer.bos_token_id
     m.generation_config.eos_token_id = text_tokenizer.eos_token_id
     m.generation_config.pad_token_id = text_tokenizer.pad_token_id

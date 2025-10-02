@@ -16,3 +16,4 @@ saved_models/
 # files
 .env
 *.png
+*.jpg
