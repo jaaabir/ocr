@@ -1,14 +1,7 @@
-from func_utils.plot_utils import show_image
-import matplotlib.pyplot as plt 
 from glob import glob
-import pandas as pd 
-import numpy as np 
-import json
 import os 
 
-
 import torch 
-from torch.utils.data import DataLoader
 from func_utils.pydataloader import SynthDogDataset
 from encoder_decoder_model import (
     init_dit_bart_models_fixed, add_lora_to_decoder, 
@@ -16,9 +9,7 @@ from encoder_decoder_model import (
 )
 
 
-import evaluate 
-from torch.nn.utils.rnn import pad_sequence
-from transformers import Seq2SeqTrainingArguments, Seq2SeqTrainer, EarlyStoppingCallback
+from transformers import Seq2SeqTrainingArguments, EarlyStoppingCallback
 
 import wandb
 import gc
@@ -125,7 +116,8 @@ training_args = Seq2SeqTrainingArguments(
         max_grad_norm=max_grad_norm,  
         
         weight_decay=0.01,
-        dataloader_pin_memory=False,
+        dataloader_pin_memory=True,
+        dataloader_num_workers=4,
         predict_with_generate=True,
         generation_max_length=max_token_size,
         generation_num_beams=num_beams,
@@ -137,6 +129,7 @@ training_args = Seq2SeqTrainingArguments(
         metric_for_best_model="eval_loss",
         load_best_model_at_end=True,  
         greater_is_better=False,
+        deepspeed="deepspeed_config.json"
         )
 
 load_model_choice = int(input("""
@@ -163,7 +156,7 @@ if load_model_choice == 1:
     elif base_model_choice_ind == 2:
         _, _, ovmodel = init_dit_dbart_models()
     else:
-        ovmodel = load_pretrained_enc_dec_model('saved_models/dit768_dbart/', None, None, lora_applied=False, device_map='auto')
+        ovmodel = load_pretrained_enc_dec_model('saved_models/dit768_dbart/', None, None, lora_applied=False, device_map='cuda')
 else:
     ckpt_path = input('Relative ckpt path: ')
     if base_model_choice_ind == 1:
@@ -177,7 +170,7 @@ else:
                                              new_tokens=['Ã', 'Ê', 'Â']
                                             )
     else:
-        ovmodel = load_pretrained_enc_dec_model(ckpt_path, None, None, lora_applied=False, device_map='auto')
+        ovmodel = load_pretrained_enc_dec_model(ckpt_path, None, None, lora_applied=False, device_map='cuda')
 
 if model_config_version == 'v7':
     ovmodel = unfreeze_all_params(ovmodel, unfreeze_encoder=False, unfreeze_decoder=True)
@@ -193,6 +186,7 @@ ovmodel.config.repetition_penalty = 1.5
 ovmodel.config.length_penalty = 1.0 
 ovmodel.config.num_beams = num_beams
 ovmodel.config.use_cache = False  
+ovmodel.config.decoder.use_cache = False  
 ovmodel.config.is_encoder_decoder = True
 ovmodel.config.do_sample = False  
 ovmodel.config.tie_word_embeddings = True
