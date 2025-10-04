@@ -48,13 +48,23 @@ Choose the base model arch:
 [1] - DiT + Bart
 [2] - DiT + Donut-MBart
 [3] - Dit768 + Donut-MBart
+[4] - Base-Dit768 + Donut-MBart
 """))
+
+base_model_path = None
 if base_model_choice_ind == 1:
     processor, text_tokenizer = init_dit_bart_models_fixed(load_model=False)
 elif base_model_choice_ind == 2:
     processor, text_tokenizer = init_dit_dbart_models(load_model=False)
+elif base_model_choice_ind == 3:
+    base_model_path = 'saved_models/dit768_dbart/'
+    processor, text_tokenizer = load_pretrained_iprocessor_tokenizer(base_model_path)
+elif base_model_choice_ind == 4:
+    base_model_path = 'saved_models/mydit768_dbart/'
+    processor, text_tokenizer = load_pretrained_iprocessor_tokenizer(base_model_path)
 else:
-    processor, text_tokenizer = load_pretrained_iprocessor_tokenizer('saved_models/dit768_dbart/')
+    print("Wrong model choice. Quitting ...")
+    exit()
 
 max_token_size = 1056
 sample_size = int(input('sample size: '))
@@ -91,7 +101,7 @@ print(f"Grad accumulation step: {grad_accumulation}")
 steps_per_epoch = len(train_synthdataset)/(batch_size*1*grad_accumulation)
 total_training_steps = int(steps_per_epoch * num_epochs)
 if total_training_steps > 25000:
-    eval_steps = 1000
+    eval_steps = 3500
 save_steps = eval_steps
 
 print(f'Total training steps: {total_training_steps}')
@@ -100,6 +110,8 @@ ckpt_path = 'checkpoints'
 os.makedirs(ckpt_path, exist_ok=True)
 max_grad_norm = float(input('Max Grad Norm: ')) # recommended : 10
 num_beams = 1
+use_deepspeed = True if input("Use deepspeed (y/n)?").strip().lower()[0] == 'y' else False
+eval_strategy = 'epoch' if input("Save & Eval strategy (epoch/steps) | (e/s)").strip().lower()[0] == 'e' else 'steps'
 training_args = Seq2SeqTrainingArguments(
         output_dir=f"./{ckpt_path}/{checkpoint_name}",
         per_device_train_batch_size=batch_size,
@@ -113,7 +125,7 @@ training_args = Seq2SeqTrainingArguments(
         logging_steps=50,
         logging_strategy="steps",
         save_total_limit=3,
-        fp16=True,
+        fp16=True if base_model_choice_ind == 3 else False,
         max_grad_norm=max_grad_norm,  
         
         weight_decay=0.01,
@@ -125,12 +137,12 @@ training_args = Seq2SeqTrainingArguments(
         report_to=["wandb"],
         run_name=run_name,
         save_safetensors=True,
-        eval_strategy="epoch",
-        save_strategy="epoch",
+        eval_strategy=eval_strategy,
+        save_strategy=eval_strategy,
         metric_for_best_model="eval_loss",
         load_best_model_at_end=True,  
         greater_is_better=False,
-        deepspeed="deepspeed_config.json"
+        deepspeed="deepspeed_config.json" if use_deepspeed else None
         )
 
 load_model_choice = int(input("""
