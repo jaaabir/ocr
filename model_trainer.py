@@ -102,7 +102,6 @@ steps_per_epoch = len(train_synthdataset)/(batch_size*1*grad_accumulation)
 total_training_steps = int(steps_per_epoch * num_epochs)
 if total_training_steps > 25000:
     eval_steps = 3500
-save_steps = eval_steps
 
 print(f'Total training steps: {total_training_steps}')
 print(f'Eval steps & Save steps: {eval_steps}')
@@ -112,6 +111,11 @@ max_grad_norm = float(input('Max Grad Norm: ')) # recommended : 10
 num_beams = 1
 use_deepspeed = True if input("Use deepspeed (y/n)?").strip().lower()[0] == 'y' else False
 eval_strategy = 'epoch' if input("Save & Eval strategy (epoch/steps) | (e/s)").strip().lower()[0] == 'e' else 'steps'
+
+print(f"Using deepspeed: {use_deepspeed}")
+print(f"Eval strategy: {eval_strategy}")
+if eval_strategy == 's':
+    print(f"Eval steps: {eval_steps}")
 training_args = Seq2SeqTrainingArguments(
         output_dir=f"./{ckpt_path}/{checkpoint_name}",
         per_device_train_batch_size=batch_size,
@@ -125,7 +129,7 @@ training_args = Seq2SeqTrainingArguments(
         logging_steps=50,
         logging_strategy="steps",
         save_total_limit=3,
-        fp16=True if base_model_choice_ind == 3 else False,
+        fp16=True if base_model_choice_ind >= 3 else False,
         max_grad_norm=max_grad_norm,  
         
         weight_decay=0.01,
@@ -139,6 +143,8 @@ training_args = Seq2SeqTrainingArguments(
         save_safetensors=True,
         eval_strategy=eval_strategy,
         save_strategy=eval_strategy,
+        eval_steps=eval_steps,
+        save_steps=eval_steps,
         metric_for_best_model="eval_loss",
         load_best_model_at_end=True,  
         greater_is_better=False,
