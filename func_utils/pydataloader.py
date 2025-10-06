@@ -198,7 +198,7 @@ local_fpath_to_supbase_fpath = lambda path : f"SynthDoG_{get_language(path)}/{ge
 class SynthDogDataset(Dataset):
     def __init__(self, image_path = None, output_jsons_path = None, image_feature_extractor = None, text_tokenizer = None, max_token_size = 512, n_channels = 3, 
                  return_processed_outputs = True, required_input_ids=False, sample_size = -1, read_images_from_supabase = False, split='train', 
-                 env_path=os.path.join(os.getcwd(), '.env'), img_size = (224,224)):
+                 env_path=os.path.join(os.getcwd(), '.env'), img_size = (224,224), seed = -1):
         # self.data = image_path if not read_images_from_supabase else list_files_in_bucket(self.supabase, self.bucket_name, path)
         if read_images_from_supabase:
             dotenv.load_dotenv(env_path)
@@ -220,6 +220,7 @@ class SynthDogDataset(Dataset):
         self.total_languages = len(output_jsons_path)
         self.read_images_from_supabase = read_images_from_supabase
         self.H, self.W = img_size
+        self.seed = seed
 
         if sample_size > 0:
             print(self.data[:2])
@@ -240,6 +241,8 @@ class SynthDogDataset(Dataset):
         return len(self.data)
     
     def sample_data_equally(self, total_n_samples, paths):
+        if self.seed > -1:
+            np.random.seed(self.seed)
         image_paths = np.random.shuffle(paths)
         n_sample_per_lang = total_n_samples // self.total_languages
         sampled_paths = []
