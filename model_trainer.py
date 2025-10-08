@@ -162,7 +162,7 @@ Load model type:
 
 r=32
 alpha=r*2
-dropout=0.35
+dropout=0.15
 target_modules = [
         "q_proj", "k_proj", "v_proj", "out_proj"
 ]
@@ -212,8 +212,8 @@ ovmodel.config.is_encoder_decoder = True
 ovmodel.config.do_sample = False  
 ovmodel.config.tie_word_embeddings = True
 ovmodel.config.decoder.dropout = dropout
-ovmodel.config.decoder.attention_dropout = 0.15
-ovmodel.config.decoder.decoder_layerdrop = 0.1
+ovmodel.config.decoder.attention_dropout = 0.05
+ovmodel.config.decoder.decoder_layerdrop = 0.01
 if num_beams > 1:
     ovmodel.config.early_stopping = True
 
