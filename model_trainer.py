@@ -175,7 +175,7 @@ if load_model_choice == 1:
     elif base_model_choice_ind == 2:
         _, _, ovmodel = init_dit_dbart_models()
     else:
-        ovmodel = load_pretrained_enc_dec_model(base_model_path if base_model_path else 'saved_models/dit768_dbart/', 
+        ovmodel = load_pretrained_enc_dec_model(base_model_path if base_model_path else 'saved_models/mydit768_dbart/', 
                                                 None, None, lora_applied=False, device_map='cuda')
 
 else:

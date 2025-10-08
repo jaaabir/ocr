@@ -29,7 +29,7 @@ import traceback
 
 # Try importing custom modules with error handling
 try:
-    from encoder_decoder_model import load_pretrained_enc_dec_model, init_dit_bart_models_fixed
+    from encoder_decoder_model import load_pretrained_enc_dec_model, init_dit_bart_models_fixed, load_pretrained_iprocessor_tokenizer
     from func_utils.pydataloader import SynthDogDataset
     CUSTOM_IMPORTS_AVAILABLE = True
 except ImportError as e:
