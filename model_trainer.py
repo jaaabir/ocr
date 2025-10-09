@@ -113,8 +113,8 @@ ckpt_path = 'checkpoints'
 os.makedirs(ckpt_path, exist_ok=True)
 max_grad_norm = float(input('Max Grad Norm: ')) # recommended : 10
 num_beams = 1
-use_deepspeed = True if input("Use deepspeed (y/n)?").strip().lower()[0] == 'y' else False
-eval_strategy = 'epoch' if input("Save & Eval strategy (epoch/steps) | (e/s)").strip().lower()[0] == 'e' else 'steps'
+use_deepspeed = True if input("Use deepspeed (y/n)? : ").strip().lower()[0] == 'y' else False
+eval_strategy = 'epoch' if input("Save & Eval strategy (epoch/steps) | (e/s) : ").strip().lower()[0] == 'e' else 'steps'
 
 print(f"Using deepspeed: {use_deepspeed}")
 print(f"Eval strategy: {eval_strategy}")
@@ -133,12 +133,12 @@ training_args = Seq2SeqTrainingArguments(
         logging_steps=50,
         logging_strategy="steps",
         save_total_limit=3,
-        fp16=True if base_model_choice_ind >= 3 else False,
+        bf16=True if base_model_choice_ind >= 3 else False,
         max_grad_norm=max_grad_norm,  
         
         weight_decay=0.01,
-        # dataloader_pin_memory=True,
-        # dataloader_num_workers=4,
+        dataloader_pin_memory=True,
+        dataloader_num_workers=2,
         predict_with_generate=True,
         generation_max_length=max_token_size,
         generation_num_beams=num_beams,
@@ -161,8 +161,7 @@ Load model type:
 [1] - Base Encoder & Decoder
 [2] - Pre-trained Encoder & Decoder                          
 
->>> 
-"""))
+>>> """))
 
 r=32
 alpha=r*2
@@ -236,7 +235,6 @@ peak_mem = torch.cuda.max_memory_allocated()
 print(f"The model is holding: {peak_mem / 1024**3:.2f} of GPU RAM")
 
 print()
-# ovmodel.gradient_checkpointing_enable()
 
 trainer = setup_dit_bart_training(
         train_synthdataset, val_synthdataset, training_args=training_args, model=ovmodel, 
@@ -244,18 +242,7 @@ trainer = setup_dit_bart_training(
         run_name = run_name, 
         callbacks=[early_stopping_callback],
         max_length=max_token_size,
-        # TrainerClass=SFTTrainer
     )
-
-# save_model_path = 'saved_models'
-# os.makedirs(save_model_path, exist_ok=True)
-# model_save_path = f"{save_model_path}/{run_name}_final_model"
-# try:
-#     history = trainer.train()
-#     trainer.save_model(model_save_path)
-# except Exception as e:
-#     print(e)
-#     trainer.save_model(save_model_path)
 
 trainer.train()
 torch.distributed.destroy_process_group()
