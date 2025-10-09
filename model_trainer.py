@@ -136,8 +136,8 @@ training_args = Seq2SeqTrainingArguments(
         max_grad_norm=max_grad_norm,  
         
         weight_decay=0.01,
-        dataloader_pin_memory=True,
-        dataloader_num_workers=4,
+        # dataloader_pin_memory=True,
+        # dataloader_num_workers=4,
         predict_with_generate=True,
         generation_max_length=max_token_size,
         generation_num_beams=num_beams,
@@ -217,9 +217,9 @@ ovmodel.config.decoder.use_cache = False
 ovmodel.config.is_encoder_decoder = True
 ovmodel.config.do_sample = False  
 ovmodel.config.tie_word_embeddings = True
-ovmodel.config.decoder.dropout = dropout
+ovmodel.config.decoder.dropout = 0.1
 ovmodel.config.decoder.attention_dropout = 0.05
-ovmodel.config.decoder.decoder_layerdrop = 0.01
+ovmodel.config.decoder.decoder_layerdrop = 0.001
 if num_beams > 1:
     ovmodel.config.early_stopping = True
 
