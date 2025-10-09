@@ -198,7 +198,8 @@ local_fpath_to_supbase_fpath = lambda path : f"SynthDoG_{get_language(path)}/{ge
 class SynthDogDataset(Dataset):
     def __init__(self, image_path = None, output_jsons_path = None, image_feature_extractor = None, text_tokenizer = None, max_token_size = 512, n_channels = 3, 
                  return_processed_outputs = True, required_input_ids=False, sample_size = -1, read_images_from_supabase = False, split='train', 
-                 env_path=os.path.join(os.getcwd(), '.env'), img_size = (224,224), seed = -1):
+                 env_path=os.path.join(os.getcwd(), '.env'), img_size = (224,224), seed = -1,
+                 first_image_if_in_sequence = True):
         # self.data = image_path if not read_images_from_supabase else list_files_in_bucket(self.supabase, self.bucket_name, path)
         if read_images_from_supabase:
             dotenv.load_dotenv(env_path)
@@ -221,6 +222,7 @@ class SynthDogDataset(Dataset):
         self.read_images_from_supabase = read_images_from_supabase
         self.H, self.W = img_size
         self.seed = seed
+        self.first_image_if_in_sequence = first_image_if_in_sequence
 
         if sample_size > 0:
             print(self.data[:2])
@@ -292,18 +294,24 @@ class SynthDogDataset(Dataset):
             if output_tokens[0] != self.text_tokenizer.bos_token_id:
                 output_tokens[0] = self.text_tokenizer.bos_token_id
             output_tokens = torch.tensor(output_tokens)
+            input_ids = None
         else:
             proc_outputs = self.image_feature_extractor(
                 images=image,
-                text = target_text,
-                truncation=False,
-                # padding="max_length",
-                # max_length=self.max_token_size,
+                text = f"Extract all the texts from the document: {self.image_feature_extractor.tokenizer.image_token}",
                 return_tensors="pt",
             )
             image_features = proc_outputs["pixel_values"].squeeze(0)
-            output_tokens = proc_outputs["input_ids"].squeeze(0)
+            input_ids = proc_outputs["input_ids"].squeeze(0)
             attention_mask = proc_outputs["attention_mask"].squeeze(0)
+
+            output_tokens = self.image_feature_extractor.tokenizer(
+                target_text,
+                return_tensors="pt",
+            ).input_ids.squeeze(0)
+
+        if self.first_image_if_in_sequence and len(image_features.shape) > 3:
+            image_features = image_features[0]
 
         data =  {
         'pixel_values'   : image_features if self.return_processed_outputs else image,
@@ -315,5 +323,6 @@ class SynthDogDataset(Dataset):
     }
         if self.return_processed_outputs:
             data['attention_mask'] = attention_mask
+            data['input_ids'] = input_ids
         return data
         

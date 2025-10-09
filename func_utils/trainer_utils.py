@@ -63,6 +63,7 @@ def improved_collate_fn(batch, text_tokenizer, max_length=512):
     labels = labels.clone()
     labels[labels == text_tokenizer.pad_token_id] = -100
     
+    # print(pixel_values.shape)
     res =  {
         'pixel_values': pixel_values,
         'labels': labels,
@@ -197,25 +198,26 @@ def test_model_before_training(model, image_processor, text_tokenizer, sample_im
         
         return generated_text
     
-# Better training arguments
+
+def collate_fn_wrapper(batch, custom_collate_fn=None, text_tokenizer=None, max_length=512):
+        if custom_collate_fn: 
+            return custom_collate_fn(batch, text_tokenizer, max_length = max_length)
+        return improved_collate_fn(batch, text_tokenizer, max_length = max_length) 
+    
+# Create compute metrics function
+def compute_metrics_wrapper(eval_pred, text_tokenizer=None):
+    return compute_metrics_ocr(eval_pred, text_tokenizer)
+
 def setup_dit_bart_training(train_dataset, val_dataset, training_args=None, run_name="model_run", 
-                            model=None, text_tokenizer=None, callbacks=[], max_length = 512):
+                            model=None, text_tokenizer=None, callbacks=[], max_length = 512, 
+                            TrainerClass=Seq2SeqTrainer, custom_collate_fn=None):
     """
     Complete setup for DiT-BART training.
     """
-    # Initialize model
+
+    collate_fn = lambda batch: collate_fn_wrapper(batch, custom_collate_fn, text_tokenizer, max_length=max_length)
+    compute_metrics = lambda eval_pred: compute_metrics_wrapper(eval_pred, text_tokenizer)
     
-    
-    
-    # Create collate function
-    def collate_fn(batch):
-        return improved_collate_fn(batch, text_tokenizer, max_length = max_length)
-    
-    # Create compute metrics function
-    def compute_metrics(eval_pred):
-        return compute_metrics_ocr(eval_pred, text_tokenizer)
-    
-    # Training arguments
     if training_args is None:
         print('Training args not provided, using defaults.')
         training_args = Seq2SeqTrainingArguments(
@@ -243,7 +245,7 @@ def setup_dit_bart_training(train_dataset, val_dataset, training_args=None, run_
         )
     
     # Initialize trainer
-    trainer = Seq2SeqTrainer(
+    trainer = TrainerClass(
         model=model,
         args=training_args,
         train_dataset=train_dataset,

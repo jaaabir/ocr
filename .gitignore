@@ -12,6 +12,8 @@ wandb/
 checkpoint-*/
 *_final_model/
 saved_models/
+gutenberg/
+
 
 # files
 .env

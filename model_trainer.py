@@ -10,6 +10,7 @@ from encoder_decoder_model import (
 
 
 from transformers import Seq2SeqTrainingArguments, EarlyStoppingCallback
+# from trl import SFTTrainer 
 
 import wandb
 import gc
@@ -29,17 +30,14 @@ def get_synth_images_json_path(data_root= os.path.join('synthdog','outputs'), sp
 
     return glob(ipath), glob(json_path)
 
+def freeze_encoder_unfreeze_decoder(model):
+    for param in model.encoder.parameters():
+        param.requires_grad = False
+    for param in model.decoder.parameters():
+        param.requires_grad = True
+    
 
-torch.cuda.empty_cache()
-
-root_path1 = os.path.join('synthdog', 'outputs_ol')
-root_path2 = os.path.join('synth-text-generator', 'outputs')
-root_choice_ind = int(input(f"""
-Choose the root path: 
-[1] - {root_path1}
-[2] - {root_path2}
-"""))
-root_path = root_path1 if root_choice_ind == 1 else root_path2
+root_path = os.path.join('synth-text-generator', 'outputs')
 train_image_path, train_json_metadata = get_synth_images_json_path(data_root=root_path, split='train')
 val_image_path, val_json_metadata = get_synth_images_json_path(data_root=root_path, split='validation')
 
@@ -49,7 +47,9 @@ Choose the base model arch:
 [2] - DiT + Donut-MBart
 [3] - Dit768 + Donut-MBart
 [4] - Base-Dit768 + Donut-MBart
-"""))
+[5] - PLM-DBart
+                                  
+>>> """))
 
 base_model_path = None
 if base_model_choice_ind == 1:
@@ -61,6 +61,9 @@ elif base_model_choice_ind == 3:
     processor, text_tokenizer = load_pretrained_iprocessor_tokenizer(base_model_path)
 elif base_model_choice_ind == 4:
     base_model_path = 'saved_models/mydit768_dbart/'
+    processor, text_tokenizer = load_pretrained_iprocessor_tokenizer(base_model_path)
+elif base_model_choice_ind == 5:
+    base_model_path = 'saved_models/plm_dbart/'
     processor, text_tokenizer = load_pretrained_iprocessor_tokenizer(base_model_path)
 else:
     print("Wrong model choice. Quitting ...")
@@ -77,12 +80,12 @@ val_synthdataset = SynthDogDataset(image_path=val_image_path,output_jsons_path=v
                                    text_tokenizer=text_tokenizer, max_token_size=max_token_size, sample_size=val_sample_size, 
                                    read_images_from_supabase=fetch_from_supabase, split='validation') 
 
-model_config_version = 'v8'
+model_config_version = 'v6'
 run_name = input('Run name: ')
 checkpoint_name = input('Checkpoint name: ')
 
 if run_name == '':
-    run_name = "dit_bart" 
+    run_name = "dit_bart" if not base_model_path else base_model_path.split('/')[-1]
 
 if checkpoint_name == '':
     checkpoint_name = run_name
@@ -197,6 +200,9 @@ if model_config_version == 'v7':
     ovmodel = unfreeze_all_params(ovmodel, unfreeze_encoder=False, unfreeze_decoder=True)
     ovmodel = unfreeze_last_n_encoder(ovmodel, unfreeze_last_n_layer_block=1, unfreeze_attention_layers=True, skip_encoder=True, skip_decoder=True)
 
+if model_config_version == 'v6':
+    freeze_encoder_unfreeze_decoder(ovmodel)
+
 ovmodel.add_cross_attention = True
 ovmodel.config.max_length = max_token_size
 ovmodel.config.decoder.max_length = max_token_size
@@ -217,7 +223,7 @@ ovmodel.config.decoder.decoder_layerdrop = 0.01
 if num_beams > 1:
     ovmodel.config.early_stopping = True
 
-if model_config_version == 'v8':
+if model_config_version == 'v8' or model_config_version == 'v6':
     print_trainable_prams(ovmodel)
 
 early_stop = int(input('Early stopping: '))
@@ -225,7 +231,6 @@ early_stopping_callback = EarlyStoppingCallback(
     early_stopping_patience=early_stop
 )
 
-# ovmodel.gradient_checkpointing()
 peak_mem = torch.cuda.max_memory_allocated()
 print(f"The model is holding: {peak_mem / 1024**3:.2f} of GPU RAM")
 
@@ -237,7 +242,8 @@ trainer = setup_dit_bart_training(
         text_tokenizer=text_tokenizer,
         run_name = run_name, 
         callbacks=[early_stopping_callback],
-        max_length=max_token_size
+        max_length=max_token_size,
+        # TrainerClass=SFTTrainer
     )
 
 # save_model_path = 'saved_models'
