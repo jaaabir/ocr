@@ -65,6 +65,7 @@ elif base_model_choice_ind == 4:
 elif base_model_choice_ind == 5:
     base_model_path = 'saved_models/plm_dbart/'
     processor, text_tokenizer = load_pretrained_iprocessor_tokenizer(base_model_path)
+    processor.num_of_tiles = 1
 else:
     print("Wrong model choice. Quitting ...")
     exit()
