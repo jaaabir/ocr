@@ -65,7 +65,7 @@ elif base_model_choice_ind == 4:
 elif base_model_choice_ind == 5:
     base_model_path = 'saved_models/plm_dbart/'
     processor, text_tokenizer = load_pretrained_iprocessor_tokenizer(base_model_path)
-    processor.num_of_tiles = 1
+    print(f"Processor config: {processor.config}")
 else:
     print("Wrong model choice. Quitting ...")
     exit()
@@ -138,9 +138,9 @@ training_args = Seq2SeqTrainingArguments(
         
         weight_decay=0.01,
         dataloader_pin_memory=True,
-        dataloader_num_workers=2,
+        dataloader_num_workers=8,
         predict_with_generate=True,
-        generation_max_length=max_token_size,
+        generation_max_length=256,
         generation_num_beams=num_beams,
         report_to=["wandb"],
         run_name=run_name,
