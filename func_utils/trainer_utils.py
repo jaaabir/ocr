@@ -13,57 +13,30 @@ def improved_collate_fn(batch, text_tokenizer, max_length=512):
     attn_masks = []
     
     for item in batch:
-        # --- Pixel values ---
-        if 'pixel_values' in item:
-            pixel_values.append(item['pixel_values'])
-        else:
-            raise ValueError("Missing 'pixel_values' in batch item")
-            
-        # --- Labels ---
-        if 'labels' in item:
-            label = item['labels']
-            if len(label.shape) == 0:  # single token
-                label = label.unsqueeze(0)
-            
-            # Truncate if too long
-            if label.shape[0] > max_length:
-                label = label[:max_length-1]  # leave space for EOS
-                eos_tensor = torch.tensor([text_tokenizer.eos_token_id], dtype=torch.long)
-                label = torch.cat([label, eos_tensor])
-            
-            labels.append(label)
-            # print(label)
-        else:
-            raise ValueError("Missing 'labels' in batch item")
+        pixel_values.append(item['pixel_values'])
+        label = item['labels']
+        if label.shape[0] > max_length:
+            label = label[:max_length-1]  
+            eos_tensor = torch.tensor([text_tokenizer.eos_token_id], dtype=torch.long)
+            label = torch.cat([label, eos_tensor])
+        labels.append(label)
 
-        # --- Attention masks ---
         if 'attention_mask' in item and item['attention_mask'] is not None:
             attn_mask = item['attention_mask']
             if attn_mask.shape[0] > max_length:
                 attn_mask = attn_mask[:max_length]
-            attn_masks.append(attn_mask)
-            # print(attn_mask)
         else:
-            # if not provided, make a mask of ones
-            attn_masks.append(torch.ones_like(label, dtype=torch.long))
-
-        # print(f'Max token size: {max_length}')
-        
+            attn_mask = torch.ones_like(label, dtype=torch.long)
+        attn_masks.append(attn_mask)
+ 
     
-    # --- Stack pixel values ---
     pixel_values = torch.stack(pixel_values)
-    
-    # --- Pad labels ---
     labels = pad_sequence(labels, batch_first=True, padding_value=text_tokenizer.pad_token_id)
-    
-    # --- Pad attention masks ---
     attn_masks = pad_sequence(attn_masks, batch_first=True, padding_value=0)
     
-    # --- Replace pad tokens in labels with -100 (ignore index in loss) ---
     labels = labels.clone()
     labels[labels == text_tokenizer.pad_token_id] = -100
     
-    # print(pixel_values.shape)
     res =  {
         'pixel_values': pixel_values,
         'labels': labels,

@@ -70,7 +70,7 @@ else:
     print("Wrong model choice. Quitting ...")
     exit()
 
-max_token_size = 1056
+max_token_size = 264
 sample_size = int(input('sample size: '))
 fetch_from_supabase = False
 train_synthdataset = SynthDogDataset(image_path=train_image_path,output_jsons_path=train_json_metadata, image_feature_extractor=processor, 
@@ -133,7 +133,7 @@ training_args = Seq2SeqTrainingArguments(
         logging_steps=50,
         logging_strategy="steps",
         save_total_limit=3,
-        bf16=True if base_model_choice_ind >= 3 else False,
+        fp16=True if base_model_choice_ind >= 3 else False,
         max_grad_norm=max_grad_norm,  
         
         weight_decay=0.01,
@@ -204,8 +204,8 @@ if model_config_version == 'v6':
     freeze_encoder_unfreeze_decoder(ovmodel)
 
 ovmodel.add_cross_attention = True
-ovmodel.config.max_length = max_token_size
-ovmodel.config.decoder.max_length = max_token_size
+ovmodel.config.max_length = len(text_tokenizer)
+ovmodel.config.decoder.max_length = len(text_tokenizer)
 ovmodel.config.min_length = 1
 ovmodel.config.decoder.min_length = 1
 ovmodel.config.no_repeat_ngram_size = 0
