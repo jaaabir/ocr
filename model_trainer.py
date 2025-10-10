@@ -35,6 +35,12 @@ def freeze_encoder_unfreeze_decoder(model):
         param.requires_grad = False
     for param in model.decoder.parameters():
         param.requires_grad = True
+
+def unfreeze_last_n_blocks(model, n):
+    if n > 0:
+        for layer in model[-n:]:
+            for param in layer.parameters():
+                param.requires_grad = True
     
 
 root_path = os.path.join('synth-text-generator', 'outputs')
@@ -202,6 +208,7 @@ if model_config_version == 'v7':
 
 if model_config_version == 'v6':
     freeze_encoder_unfreeze_decoder(ovmodel)
+    unfreeze_last_n_blocks(ovmodel.encoder.timm_model.blocks, 1)
 
 ovmodel.add_cross_attention = True
 ovmodel.config.max_length = len(text_tokenizer)
