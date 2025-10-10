@@ -252,6 +252,11 @@ trainer = setup_dit_bart_training(
         max_length=max_token_size,
     )
 
-trainer.train()
-torch.distributed.destroy_process_group()
+try:
+    trainer.train()
+    torch.distributed.destroy_process_group()
+except Exception as e:
+    print(f"An exception occurred: {e}")
+    trainer.save_model(f"saved_models/{run_name}")
+    print("Model saved after exception.")
 print('DONE')
