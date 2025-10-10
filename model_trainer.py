@@ -65,7 +65,7 @@ elif base_model_choice_ind == 4:
 elif base_model_choice_ind == 5:
     base_model_path = 'saved_models/plm_dbart/'
     processor, text_tokenizer = load_pretrained_iprocessor_tokenizer(base_model_path)
-    print(f"Processor config: {processor.config}")
+    print(f"Processor config: {processor}")
 else:
     print("Wrong model choice. Quitting ...")
     exit()
